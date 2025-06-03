@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Admin Dashboard</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background-color: #f5f7fa;
+      margin: 0;
+      display: flex;
+      height: 100vh;
+      overflow: hidden;
+    }
+    .sidebar {
+      width: 220px;
+      background-color: #343a40;
+      color: white;
+      padding: 1rem;
+      display: flex;
+      flex-direction: column;
+    }
+    .sidebar h3 {
+      text-align: center;
+      margin-bottom: 2rem;
+    }
+    .sidebar a {
+      color: white;
+      text-decoration: none;
+      background: #495057;
+      padding: 10px;
+      margin-bottom: 10px;
+      border-radius: 4px;
+    }
+    .sidebar a:hover {
+      background: #6c757d;
+    }
+    .main-content {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+    }
+    .header {
+      background: #fff;
+      padding: 1rem 2rem;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+    }
+    .header h2 {
+      margin: 0;
+    }
+    .content {
+      padding: 2rem;
+    }
+  </style>
+</head>
+<body>
+
+<div class="sidebar">
+  <h3>Admin</h3>
+  <a href="{{ url_for('admin_dashboard') }}">Home</a>
+  <a href="{{ url_for('view_users') }}">View Users</a>
+  <a href="{{ url_for('logout') }}">Logout</a>
+</div>
+
+  <div class="main-content">
+    <div class="header">
+      <h2>Admin Dashboard</h2>
+    </div>
+    <div class="content">
+      <p>Welcome, {{ username }}. Use the menu to manage users or navigate back to the main dashboard.</p>
+    </div>
+  </div>
+
+</body>
+</html>

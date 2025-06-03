@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Student Dashboard</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background-color: #f5f7fa;
+      margin: 0;
+      padding: 0;
+    }
+
+    .container {
+      max-width: 900px;
+      margin: 40px auto;
+      background: #fff;
+      padding: 30px;
+      border-radius: 8px;
+      box-shadow: 0 4px 8px rgba(0,0,0,0.05);
+    }
+
+    h2 {
+      margin-top: 0;
+      text-align: center;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 20px;
+    }
+
+    th, td {
+      padding: 14px;
+      border-bottom: 1px solid #ddd;
+      text-align: center;
+    }
+
+    th {
+      background-color: #f0f0f0;
+    }
+
+    input[type="file"] {
+      padding: 5px;
+    }
+
+    input[type="submit"] {
+      background-color: #007bff;
+      color: white;
+      border: none;
+      padding: 6px 12px;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+
+    input[type="submit"]:hover {
+      background-color: #0056b3;
+    }
+
+    .status-awaiting {
+      color: #999;
+    }
+
+    .status-marking {
+      color: orange;
+      font-weight: bold;
+    }
+
+    .status-marked {
+      color: green;
+      font-weight: bold;
+    }
+
+    .score-box {
+      font-weight: bold;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h2>Student Dashboard</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>Report Slot</th>
+          <th>Document</th>
+          <th>Status</th>
+          <th>Score</th>
+          <th>Upload</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for slot, filename, status, score in submissions %}
+        <tr>
+          <td>Report {{ slot }}</td>
+          <td>
+            {% if filename %}
+              {{ filename }}
+            {% else %}
+              -
+            {% endif %}
+          </td>
+          <td>
+            {% if status == 'Awaiting submission' %}
+              <span class="status-awaiting">{{ status }}</span>
+            {% elif status == 'Awaiting Marking' %}
+              <span class="status-marking">{{ status }}</span>
+            {% elif status == 'Marked' %}
+              <span class="status-marked">{{ status }}</span>
+            {% else %}
+              {{ status }}
+            {% endif %}
+          </td>
+          <td class="score-box">
+            {% if score is not none %}
+              {{ score }}
+            {% else %}
+              -
+            {% endif %}
+          </td>
+          <td>
+            {% if status == 'Awaiting submission' or status == 'Awaiting Marking' %}
+            <form action="{{ url_for('upload_submission') }}" method="POST" enctype="multipart/form-data">
+              <input type="hidden" name="slot_number" value="{{ slot }}">
+              <input type="file" name="file" accept=".doc,.docx" required>
+              <input type="submit" value="Upload">
+            </form>
+            {% else %}
+              -
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</body>
+</html>
