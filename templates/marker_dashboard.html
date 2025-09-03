@@ -1,45 +1,80 @@
-<!DOCTYPE html>
-<html>
-<head>
-  <title>Marker Dashboard</title>
-  <style>
-    body {
-      font-family: Arial, sans-serif;
-      background-color: #f5f7fa;
-      padding: 2rem;
-    }
-    .container {
-      max-width: 600px;
-      background: white;
-      padding: 2rem;
-      margin: auto;
-      border-radius: 8px;
-      box-shadow: 0 0 10px rgba(0,0,0,0.1);
-    }
-    ul {
-      list-style-type: none;
-      padding: 0;
-    }
-    li {
-      background: #e9ecef;
-      margin: 0.5rem 0;
-      padding: 0.75rem;
-      border-radius: 4px;
-    }
-  </style>
-</head>
-<body>
-  <div class="container">
-    <h2>Students Assigned to You</h2>
-    {% if students %}
-      <ul>
-        {% for student in students %}
-          <li>{{ student[0] }}</li>
-        {% endfor %}
-      </ul>
-    {% else %}
-      <p>No students have been assigned to you yet.</p>
-    {% endif %}
-  </div>
-</body>
-</html>
+{% extends "base.html" %}
+{% block title %}Marker Dashboard{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+  <h2 class="mb-4">Assigned Students</h2>
+
+  {% for course, student_list in grouped.items() %}
+    <h4 class="mt-4">{{ course }}</h4>
+    <div class="table-responsive">
+      <table class="table table-bordered table-striped align-middle">
+        <thead class="table-light">
+          <tr>
+            <th>Student</th>
+            <th>Course</th>
+            {% set required = COURSE_WORKBOOKS.get(course, 1) %}
+            {% for i in range(1, required + 1) %}
+              <th>Workbook {{ i }}</th>
+            {% endfor %}
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for student_info in student_list %}
+            {% set student = student_info['student'] %}
+            {% set workbooks = student_info['workbooks'] %}
+            <tr>
+              <td>{{ student.username }}</td>
+              <td>{{ student.course }}</td>
+
+              {% for i in range(1, required + 1) %}
+                {% set wb = workbooks | selectattr('workbook_number', 'equalto', i) | list %}
+                {% set latest = wb[-1] if wb else None %}
+                <td>
+                  {% if latest %}
+                    {% if latest.score == 100 %}
+                      <span class="badge bg-success d-block mb-1">Pass</span>
+                    {% elif latest.score == 50 %}
+                      <span class="badge bg-warning text-dark d-block mb-1">Referred</span>
+                    {% elif latest.score == 0 %}
+                      <span class="badge bg-danger d-block mb-1">Fail</span>
+                    {% else %}
+                      <span class="badge bg-secondary d-block mb-1">Awaiting Marking</span>
+                      {% set deadline = latest.submission_time + timedelta(days=14) %}
+                      {% set time_left = deadline - now %}
+                      {% set days = time_left.days %}
+                      {% set hours = (time_left.seconds // 3600) %}
+                      {% if days >= 7 %}
+                        <div class="bg-success text-white text-center small px-2 py-1 rounded">
+                          🕒 {{ days }}d {{ hours }}h
+                        </div>
+                      {% elif days >= 3 %}
+                        <div class="bg-warning text-dark text-center small px-2 py-1 rounded">
+                          🕒 {{ days }}d {{ hours }}h
+                        </div>
+                      {% else %}
+                        <div class="bg-danger text-white text-center small px-2 py-1 rounded">
+                          🕒 {{ days }}d {{ hours }}h
+                        </div>
+                      {% endif %}
+                    {% endif %}
+                  {% else %}
+                    <span class="badge bg-secondary">Awaiting Submission</span>
+                  {% endif %}
+                </td>
+              {% endfor %}
+
+              <td>
+                <a href="{{ url_for('marker_view_student', student_id=student.id) }}" class="btn btn-sm btn-outline-primary">
+                  View
+                </a>
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% endfor %}
+</div>
+{% endblock %}

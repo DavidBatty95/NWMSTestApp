@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>{% block title %}NWMS{% endblock %}</title>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Open+Sans:400,600&display=swap">
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <style>
+    body {
+      margin: 0;
+      font-family: 'Open Sans', sans-serif;
+      background-color: #f7f9fa;
+      color: #333;
+    }
+    header {
+      background-color: #4CA73D;
+      color: white;
+      padding: 15px 30px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    header img {
+      height: 100px;
+    }
+    header h1 {
+      margin: 0;
+      font-size: 24px;
+    }
+    .logout-btn {
+      background-color: #0B3D0B;
+      color: white;
+      padding: 8px 14px;
+      border-radius: 4px;
+      text-decoration: none;
+      font-weight: bold;
+    }
+    .dashboard-container {
+      display: flex;
+      min-height: calc(100vh - 80px);
+    }
+    .sidebar {
+      width: 200px;
+      background-color: #4CA73D;
+      padding: 20px;
+    }
+    .sidebar ul {
+      list-style: none;
+      padding: 0;
+    }
+    .sidebar li {
+      margin-bottom: 12px;
+    }
+    .sidebar a {
+      color: white;
+      text-decoration: none;
+      font-weight: bold;
+    }
+    .sidebar a:hover {
+      color: #55B947;
+    }
+    .main-content {
+      flex-grow: 1;
+      padding: 30px;
+    }
+    .flashes {
+      padding-left: 0;
+      list-style: none;
+    }
+    .flashes li {
+      padding: 10px;
+      background-color: #f8d7da;
+      color: #721c24;
+      border: 1px solid #f5c6cb;
+      margin-bottom: 10px;
+      border-radius: 5px;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div style="display: flex; align-items: center; gap: 20px;">
+      <img src="{{ url_for('static', filename='images/nwms_logo.jpeg') }}" alt="NWMS Logo">
+      <h1>North West Medical Solutions</h1>
+    </div>
+    {% if current_user.is_authenticated %}
+    <a href="{{ url_for('logout') }}" class="logout-btn">Logout</a>
+    {% endif %}
+  </header>
+
+  <div class="dashboard-container">
+    {% if current_user.is_authenticated and request.endpoint not in ['login', 'register'] %}
+    <div class="sidebar">
+      <ul>
+        {% if current_user.role == 'marker' %}
+        <li><a href="{{ url_for('marker_dashboard') }}">Home</a></li>
+        <li><a href="{{ url_for('marker_dashboard') }}">Assigned Students</a></li>
+        {% elif current_user.role == 'admin' %}
+        <li><a href="{{ url_for('admin_dashboard') }}">Home</a></li>
+        <li><a href="{{ url_for('view_users') }}">User List</a></li>
+        {% elif current_user.role == 'student' %}
+        <li><a href="{{ url_for('student_dashboard') }}">My Submissions</a></li>
+        {% endif %}
+      </ul>
+    </div>
+    {% endif %}
+
+    <div class="main-content">
+      {% with messages = get_flashed_messages() %}
+        {% if messages %}
+          <ul class="flashes">
+            {% for message in messages %}
+              <li>{{ message }}</li>
+            {% endfor %}
+          </ul>
+        {% endif %}
+      {% endwith %}
+
+      {% block content %}{% endblock %}
+    </div>
+  </div>
+</body>
+</html>

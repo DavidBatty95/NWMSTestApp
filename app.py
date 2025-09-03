@@ -1,159 +1,330 @@
-import os
-from flask import Flask, render_template, redirect, url_for, request, flash
+from flask import Flask, render_template, redirect, url_for, request, flash, send_from_directory
+from flask_sqlalchemy import SQLAlchemy
 from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
-from werkzeug.utils import secure_filename
-import sqlite3
 from werkzeug.security import generate_password_hash, check_password_hash
-
-UPLOAD_FOLDER = 'uploads'
-ALLOWED_EXTENSIONS = {'doc', 'docx'}
+from werkzeug.utils import secure_filename
+from datetime import datetime, timedelta
+import os
 
 app = Flask(__name__)
-app.secret_key = 'supersecretkey'
-app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
+app.config['SECRET_KEY'] = 'your-secret-key'
+app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///database.db'
+app.config['UPLOAD_FOLDER'] = 'uploads'
 
+if not os.path.exists(app.config['UPLOAD_FOLDER']):
+    os.makedirs(app.config['UPLOAD_FOLDER'])
+
+db = SQLAlchemy(app)
 login_manager = LoginManager()
 login_manager.init_app(app)
-login_manager.login_view = 'login'
 
-# -----------------------------
-# User Model
-# -----------------------------
-class User(UserMixin):
-    def __init__(self, id, username, password_hash, role):
-        self.id = id
-        self.username = username
-        self.password_hash = password_hash
-        self.role = role
+COURSE_WORKBOOKS = {
+    'FREC4': 3,
+    'SALM': 1,
+    'CFR': 1
+}
+
+class User(UserMixin, db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    username = db.Column(db.String(150), nullable=False, unique=True)
+    email = db.Column(db.String(150), nullable=False, unique=True)
+    password = db.Column(db.String(150), nullable=False)
+    role = db.Column(db.String(50), nullable=False)
+    course = db.Column(db.String(10), nullable=True)
+
+class WorkbookSubmission(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    student_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    workbook_number = db.Column(db.Integer, nullable=False)
+    file_path = db.Column(db.String(255))
+    submission_time = db.Column(db.DateTime, default=datetime.utcnow)
+    marked = db.Column(db.Boolean, default=False)
+    score = db.Column(db.Integer, nullable=True)
+    feedback = db.Column(db.Text, nullable=True)
+    is_referral = db.Column(db.Boolean, default=False)
+    referral_count = db.Column(db.Integer, default=0)
+    corrected_submission_path = db.Column(db.String(255), nullable=True)
+
+    # This is the fix:
+    student = db.relationship('User', foreign_keys=[student_id])
+class Assignment(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    student_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False, unique=True)
+    marker_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
 
 @login_manager.user_loader
 def load_user(user_id):
-    conn = sqlite3.connect('users.db')
-    c = conn.cursor()
-    c.execute("SELECT * FROM users WHERE id = ?", (user_id,))
-    user = c.fetchone()
-    conn.close()
-    if user:
-        return User(*user)
-    return None
+    return User.query.get(int(user_id))
 
-# -----------------------------
-# Allowed File Type
-# -----------------------------
-def allowed_file(filename):
-    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+def get_student_status(student, required_workbooks):
+    submissions = WorkbookSubmission.query.filter_by(student_id=student.id).all()
+    status = "Pass"
+    now = datetime.utcnow()
 
-# -----------------------------
-# Student Dashboard
-# -----------------------------
-@app.route('/student')
+    for i in range(1, required_workbooks + 1):
+        matching = [s for s in submissions if s.workbook_number == i]
+        if not matching:
+            status = "In Progress"
+            continue
+
+        latest = sorted(matching, key=lambda x: x.submission_time)[-1]
+        deadline_passed = (now - latest.submission_time).days > 14 and not latest.marked
+        if latest.referral_count >= 3 or deadline_passed:
+            return "Fail"
+
+        if not latest.marked or latest.is_referral:
+            status = "In Progress"
+
+    return status
+
+def get_marking_deadline(submission):
+    deadline = submission.submission_time + timedelta(days=14)
+    time_left = deadline - datetime.utcnow()
+    days = time_left.days
+    hours = time_left.seconds // 3600
+    return max(days, 0), max(hours, 0), deadline
+
+@app.route('/')
+def index():
+    return redirect(url_for('login'))
+
+@app.route('/register', methods=['GET', 'POST'])
+def register():
+    if request.method == 'POST':
+        username = request.form['username']
+        email = request.form['email']
+        password = generate_password_hash(request.form['password'])
+        role = request.form['role']
+        course = request.form.get('course') if role == 'student' else None
+
+        if User.query.filter_by(username=username).first():
+            flash('Username already exists')
+            return redirect(url_for('register'))
+
+        new_user = User(username=username, email=email, password=password, role=role, course=course)
+        db.session.add(new_user)
+        db.session.commit()
+        return redirect(url_for('login'))
+
+    return render_template('register.html')
+
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if request.method == 'POST':
+        username = request.form['username']
+        password = request.form['password']
+        user = User.query.filter_by(username=username).first()
+        if user and check_password_hash(user.password, password):
+            login_user(user)
+            if user.role == 'admin':
+                return redirect(url_for('admin_dashboard'))
+            elif user.role == 'marker':
+                return redirect(url_for('marker_dashboard'))
+            else:
+                return redirect(url_for('student_dashboard'))
+        flash('Invalid username or password')
+    return render_template('login.html')
+
+@app.route('/logout')
+@login_required
+def logout():
+    logout_user()
+    return redirect(url_for('login'))
+
+@app.route('/student_dashboard', methods=['GET', 'POST'])
 @login_required
 def student_dashboard():
     if current_user.role != 'student':
-        flash("Access denied.")
-        return redirect(url_for('dashboard'))
+        return redirect(url_for('login'))
+    workbooks = WorkbookSubmission.query.filter_by(student_id=current_user.id).all()
+    required = COURSE_WORKBOOKS.get(current_user.course, 1)
+    status = get_student_status(current_user, required)
 
-    conn = sqlite3.connect('users.db')
-    c = conn.cursor()
-    c.execute("SELECT slot_number, filename, status, score FROM submissions WHERE student_id = ?", (current_user.id,))
-    submissions = {row[0]: row for row in c.fetchall()}
-    conn.close()
+    if request.method == 'POST':
+        if 'file' in request.files:
+            file = request.files['file']
+            wb_number = int(request.form['workbook_number'])
+            if file:
+                filename = secure_filename(file.filename)
+                filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+                file.save(filepath)
+                existing = WorkbookSubmission.query.filter_by(student_id=current_user.id, workbook_number=wb_number).all()
+                referral_count = existing[-1].referral_count + 1 if existing else 0
+                submission = WorkbookSubmission(
+                    student_id=current_user.id,
+                    workbook_number=wb_number,
+                    file_path=filename,
+                    referral_count=referral_count
+                )
+                db.session.add(submission)
+                db.session.commit()
+                return redirect(url_for('student_dashboard'))
+        elif 'referral_file' in request.files:
+            referral_file = request.files['referral_file']
+            wb_number = int(request.form['workbook_number'])
+            if referral_file:
+                filename = secure_filename(referral_file.filename)
+                filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+                referral_file.save(filepath)
+                submission = WorkbookSubmission.query.filter_by(student_id=current_user.id, workbook_number=wb_number).order_by(WorkbookSubmission.submission_time.desc()).first()
+                if submission:
+                    submission.corrected_submission_path = filename
+                    db.session.commit()
+                    return redirect(url_for('student_dashboard'))
 
-    # Ensure all 3 slots are represented
-    full_submissions = []
-    for slot in range(1, 4):
-        if slot in submissions:
-            full_submissions.append(submissions[slot])
-        else:
-            full_submissions.append((slot, None, "Awaiting submission", None))
+    return render_template('student_dashboard.html', workbooks=workbooks, required=required, now=datetime.utcnow(), timedelta=timedelta, status=status)
 
-    return render_template('student_dashboard.html', submissions=full_submissions)
-
-# -----------------------------
-# Upload Submission
-# -----------------------------
-@app.route('/upload_submission', methods=['POST'])
+@app.route('/uploads/<filename>')
 @login_required
-def upload_submission():
-    if current_user.role != 'student':
-        flash("Access denied.")
-        return redirect(url_for('dashboard'))
+def uploaded_file(filename):
+    return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
 
-    slot_number = int(request.form['slot_number'])
-    file = request.files['file']
+@app.route('/marker_dashboard')
+@login_required
+def marker_dashboard():
+    if current_user.role != 'marker':
+        return redirect(url_for('login'))
 
-    if file and allowed_file(file.filename):
-        filename = secure_filename(file.filename)
-        save_path = os.path.join(app.config['UPLOAD_FOLDER'], f"{current_user.id}_slot{slot_number}_{filename}")
-        file.save(save_path)
+    students = User.query.filter_by(role='student').all()
+    grouped = {}
+    for student in students:
+        course = student.course or "Unknown"
+        grouped.setdefault(course, []).append({
+            'student': student,
+            'workbooks': WorkbookSubmission.query.filter_by(student_id=student.id).all(),
+            'status': get_student_status(student, COURSE_WORKBOOKS.get(course, 1))
+        })
 
-        conn = sqlite3.connect('users.db')
-        c = conn.cursor()
+    # Get recent submissions for activity feed
+    recent_submissions = WorkbookSubmission.query.order_by(WorkbookSubmission.submission_time.desc()).limit(10).all()
 
-        c.execute("SELECT * FROM submissions WHERE student_id = ? AND slot_number = ?", (current_user.id, slot_number))
-        if c.fetchone():
-            c.execute("""
-                UPDATE submissions
-                SET filename = ?, status = 'Awaiting Marking', score = NULL
-                WHERE student_id = ? AND slot_number = ?
-            """, (filename, current_user.id, slot_number))
+    # Create a dictionary to quickly look up usernames by ID
+    users = {u.id: u for u in User.query.all()}
+
+    return render_template(
+        'marker_dashboard.html',
+        grouped=grouped,
+        recent_submissions=recent_submissions,
+        users=users,
+        now=datetime.utcnow(),
+        timedelta=timedelta,
+        COURSE_WORKBOOKS=COURSE_WORKBOOKS 
+    )
+
+@app.route('/admin_dashboard', methods=['GET', 'POST'])
+@login_required
+def admin_dashboard():
+    if current_user.role != 'admin':
+        return redirect(url_for('login'))
+
+    students = User.query.filter_by(role='student').all()
+    markers = User.query.filter_by(role='marker').all()
+
+    if request.method == 'POST':
+        student_id = request.form['student_id']
+        marker_id = request.form['marker_id']
+        assignment = Assignment.query.filter_by(student_id=student_id).first()
+        if assignment:
+            assignment.marker_id = marker_id
         else:
-            c.execute("""
-                INSERT INTO submissions (student_id, slot_number, filename, status, score)
-                VALUES (?, ?, ?, 'Awaiting Marking', NULL)
-            """, (current_user.id, slot_number, filename))
+            assignment = Assignment(student_id=student_id, marker_id=marker_id)
+            db.session.add(assignment)
+        db.session.commit()
+        return redirect(url_for('admin_dashboard'))
 
-        conn.commit()
-        conn.close()
-        flash(f"Slot {slot_number} uploaded successfully.")
-    else:
-        flash("Invalid file type. Only .doc and .docx allowed.")
+    assignments = Assignment.query.all()
+    return render_template('admin_dashboard.html', students=students, markers=markers, assignments=assignments)
 
-    return redirect(url_for('student_dashboard'))
+@app.route('/view_users', methods=['GET', 'POST'])
+@login_required
+def view_users():
+    if current_user.role != 'admin':
+        return redirect(url_for('login'))
 
-# -----------------------------
-# Other Routes: login, register, dashboards, etc.
-# (Omitted here for brevity – keep them unchanged)
-# -----------------------------
+    markers = User.query.filter_by(role='marker').all()
+    students = User.query.filter_by(role='student').all()
 
-# -----------------------------
-# DB Initialisation
-# -----------------------------
-def init_user_table():
-    conn = sqlite3.connect('users.db')
-    c = conn.cursor()
-    c.execute('''
-        CREATE TABLE IF NOT EXISTS users (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            username TEXT UNIQUE NOT NULL,
-            password TEXT NOT NULL,
-            role TEXT NOT NULL
-        )
-    ''')
-    c.execute('''
-        CREATE TABLE IF NOT EXISTS assignments (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            student_id INTEGER NOT NULL,
-            marker_id INTEGER NOT NULL,
-            FOREIGN KEY(student_id) REFERENCES users(id),
-            FOREIGN KEY(marker_id) REFERENCES users(id)
-        )
-    ''')
-    c.execute('''
-        CREATE TABLE IF NOT EXISTS submissions (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            student_id INTEGER NOT NULL,
-            slot_number INTEGER NOT NULL,
-            filename TEXT,
-            status TEXT,
-            score INTEGER,
-            FOREIGN KEY(student_id) REFERENCES users(id)
-        )
-    ''')
-    conn.commit()
-    conn.close()
+    if request.method == 'POST':
+        student_id = int(request.form['student_id'])
+        marker_id = int(request.form['marker_id'])
+        assignment = Assignment.query.filter_by(student_id=student_id).first()
+        if assignment:
+            assignment.marker_id = marker_id
+        else:
+            assignment = Assignment(student_id=student_id, marker_id=marker_id)
+            db.session.add(assignment)
+        db.session.commit()
+        flash("Marker assignment updated.", "success")
+        return redirect(url_for('view_users'))
+
+    assignments = {a.student_id: a.marker_id for a in Assignment.query.all()}
+    return render_template('user_list.html', markers=markers, students=students, assignments=assignments)
+
+@app.route('/marker_view_student/<int:student_id>')
+@login_required
+def marker_view_student(student_id):
+    if current_user.role != 'marker':
+        return redirect(url_for('login'))
+
+    student = User.query.get_or_404(student_id)
+    workbooks = WorkbookSubmission.query.filter_by(student_id=student.id).all()
+    required = COURSE_WORKBOOKS.get(student.course, 1)
+    workbooks_dict = {w.workbook_number: w for w in workbooks}
+
+    students = User.query.filter_by(role='student').order_by(User.id).all()
+    student_ids = [s.id for s in students]
+    current_index = student_ids.index(student.id)
+    prev_id = student_ids[current_index - 1] if current_index > 0 else None
+    next_id = student_ids[current_index + 1] if current_index < len(student_ids) - 1 else None
+
+    return render_template(
+        'marker_view_student.html',
+        student=student,
+        required=required,
+        workbooks=workbooks,
+        workbooks_dict=workbooks_dict,
+        status=get_student_status(student, required),
+        now=datetime.utcnow(),
+        timedelta=timedelta,
+        prev_id=prev_id,
+        next_id=next_id
+    )
+
+@app.route('/mark_workbook/<int:submission_id>', methods=['POST'])
+@login_required
+def mark_workbook(submission_id):
+    if current_user.role != 'marker':
+        return redirect(url_for('login'))
+
+    submission = WorkbookSubmission.query.get_or_404(submission_id)
+    feedback = request.form.get('feedback')
+    score_input = request.form.get('score')
+
+    if score_input == "Pass":
+        submission.score = 100
+        submission.is_referral = False
+    elif score_input == "Refer":
+        submission.score = 50
+        submission.is_referral = True
+        submission.referral_count += 1
+    elif score_input == "Fail":
+        submission.score = 0
+        submission.is_referral = False
+
+    submission.feedback = feedback
+    submission.marked = True
+
+    corrected = request.files.get('corrected_file')
+    if corrected and corrected.filename:
+        filename = secure_filename(corrected.filename)
+        filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+        corrected.save(filepath)
+        submission.corrected_submission_path = filename
+
+    db.session.commit()
+    return redirect(url_for('marker_view_student', student_id=submission.student_id))
 
 if __name__ == '__main__':
-    os.makedirs(UPLOAD_FOLDER, exist_ok=True)
-    init_user_table()
+    with app.app_context():
+        db.create_all()
     app.run(debug=True)

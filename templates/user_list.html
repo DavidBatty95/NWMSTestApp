@@ -1,171 +1,63 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <title>Admin - User List</title>
-  <style>
-    body {
-      font-family: Arial, sans-serif;
-      margin: 0;
-      background-color: #f5f7fa;
-      display: flex;
-      height: 100vh;
-      overflow: hidden;
-    }
+{% extends "base.html" %}
+{% block title %}User List{% endblock %}
 
-    .sidebar {
-      width: 220px;
-      background-color: #343a40;
-      color: white;
-      padding: 1rem;
-      display: flex;
-      flex-direction: column;
-    }
+{% block content %}
+<h2>Markers</h2>
+<table class="table">
+  <thead>
+    <tr>
+      <th>Marker Name</th>
+      <th>Email</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for marker in markers %}
+    <tr>
+      <td>{{ marker.username }}</td>
+      <td>{{ marker.email }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
 
-    .sidebar h3 {
-      text-align: center;
-      margin-bottom: 2rem;
-    }
-
-    .sidebar a {
-      color: white;
-      text-decoration: none;
-      background: #495057;
-      padding: 10px;
-      margin-bottom: 10px;
-      border-radius: 4px;
-    }
-
-    .sidebar a:hover {
-      background: #6c757d;
-    }
-
-    .main-content {
-      flex: 1;
-      display: flex;
-      flex-direction: column;
-    }
-
-    .header {
-      background: #fff;
-      padding: 1rem 2rem;
-      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
-    }
-
-    .header h2 {
-      margin: 0;
-    }
-
-    .content {
-      padding: 2rem;
-      overflow-y: auto;
-    }
-
-    table {
-      width: 100%;
-      background: white;
-      border-collapse: collapse;
-      margin-bottom: 2rem;
-      box-shadow: 0 0 10px rgba(0,0,0,0.05);
-    }
-
-    th, td {
-      text-align: left;
-      padding: 12px;
-      border-bottom: 1px solid #eee;
-    }
-
-    th {
-      background-color: #f2f2f2;
-      color: #333;
-    }
-
-    select, input[type="submit"] {
-      padding: 6px;
-      font-size: 1rem;
-    }
-
-    form {
-      margin: 0;
-    }
-
-    h3 {
-      color: #333;
-      margin-top: 2rem;
-    }
-  </style>
-</head>
-<body>
-
- <div class="sidebar">
-  <h3>Admin</h3>
-  <a href="{{ url_for('admin_dashboard') }}">Home</a>
-  <a href="{{ url_for('view_users') }}">View Users</a>
-  <a href="{{ url_for('logout') }}">Logout</a>
-</div>
-
-  <div class="main-content">
-    <div class="header">
-      <h2>User Management</h2>
-    </div>
-
-    <div class="content">
-
-      <h3>Markers</h3>
-      <table>
-        <thead>
-          <tr>
-            <th>Username</th>
-            <th>Role</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for user in markers %}
-          <tr>
-            <td>{{ user[1] }}</td>
-            <td>{{ user[2] }}</td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-
-      <h3>Students</h3>
-      <table>
-        <thead>
-          <tr>
-            <th>Username</th>
-            <th>Role</th>
-            <th>Assigned Marker</th>
-            <th>Reassign</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for student in students %}
-          <tr>
-            <td>{{ student[1] }}</td>
-            <td>{{ student[2] }}</td>
-            <td>{{ student[3] if student[3] else 'Unassigned' }}</td>
-            <td>
-              <form method="POST" action="{{ url_for('update_assignment') }}">
-                <input type="hidden" name="student_id" value="{{ student[0] }}">
-                <select name="marker_id" required>
-                  {% for marker in markers %}
-                    <option value="{{ marker[0] }}"
-                      {% if marker[1] == student[3] %}selected{% endif %}>
-                      {{ marker[1] }}
-                    </option>
-                  {% endfor %}
-                </select>
-                <input type="submit" value="Update">
-              </form>
-            </td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-
-    </div>
-  </div>
-
-</body>
-</html>
+<h2>Students</h2>
+<table class="table">
+  <thead>
+    <tr>
+      <th>Student Name</th>
+      <th>Email</th>
+      <th>Course</th>
+      <th>Assigned Marker</th>
+      <th>Change Marker</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for student in students %}
+    <tr>
+      <td>{{ student.username }}</td>
+      <td>{{ student.email }}</td>
+      <td>{{ student.course }}</td>
+      <td>
+        {% set assigned_id = assignments.get(student.id) %}
+        {% for marker in markers %}
+          {% if marker.id == assigned_id %}
+            {{ marker.username }}
+          {% endif %}
+        {% endfor %}
+      </td>
+      <td>
+        <form method="POST">
+          <input type="hidden" name="student_id" value="{{ student.id }}">
+          <select name="marker_id" class="form-select">
+            {% for marker in markers %}
+              <option value="{{ marker.id }}" {% if marker.id == assignments.get(student.id) %}selected{% endif %}>{{ marker.username }}</option>
+            {% endfor %}
+          </select>
+          <button type="submit" class="btn btn-sm btn-primary mt-1">Update</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}xs

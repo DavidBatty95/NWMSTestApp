@@ -1,139 +1,83 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <title>Student Dashboard</title>
-  <style>
-    body {
-      font-family: Arial, sans-serif;
-      background-color: #f5f7fa;
-      margin: 0;
-      padding: 0;
-    }
+{% extends "base.html" %}
+{% block title %}Student Dashboard{% endblock %}
 
-    .container {
-      max-width: 900px;
-      margin: 40px auto;
-      background: #fff;
-      padding: 30px;
-      border-radius: 8px;
-      box-shadow: 0 4px 8px rgba(0,0,0,0.05);
-    }
+{% block content %}
+<div class="container mt-5">
+  <h2 class="mb-3">Welcome, {{ current_user.username }}</h2>
+  <p><strong>Enrolled Course:</strong> {{ current_user.course }}</p>
+  <p><strong>Status:</strong> {{ status }}</p>
 
-    h2 {
-      margin-top: 0;
-      text-align: center;
-    }
-
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      margin-top: 20px;
-    }
-
-    th, td {
-      padding: 14px;
-      border-bottom: 1px solid #ddd;
-      text-align: center;
-    }
-
-    th {
-      background-color: #f0f0f0;
-    }
-
-    input[type="file"] {
-      padding: 5px;
-    }
-
-    input[type="submit"] {
-      background-color: #007bff;
-      color: white;
-      border: none;
-      padding: 6px 12px;
-      border-radius: 4px;
-      cursor: pointer;
-    }
-
-    input[type="submit"]:hover {
-      background-color: #0056b3;
-    }
-
-    .status-awaiting {
-      color: #999;
-    }
-
-    .status-marking {
-      color: orange;
-      font-weight: bold;
-    }
-
-    .status-marked {
-      color: green;
-      font-weight: bold;
-    }
-
-    .score-box {
-      font-weight: bold;
-    }
-  </style>
-</head>
-<body>
-  <div class="container">
-    <h2>Student Dashboard</h2>
-    <table>
-      <thead>
-        <tr>
-          <th>Report Slot</th>
-          <th>Document</th>
-          <th>Status</th>
-          <th>Score</th>
-          <th>Upload</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for slot, filename, status, score in submissions %}
-        <tr>
-          <td>Report {{ slot }}</td>
+  <h4 class="mt-4">Your Workbooks</h4>
+  <table class="table table-striped">
+    <thead>
+      <tr>
+        <th>Workbook Number</th>
+        <th>Status</th>
+        <th>Submission Time</th>
+        <th>Time Left for Marking</th>
+        <th>Feedback</th>
+        <th>Referral Upload</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for i in range(1, required + 1) %}
+      {% set submission = workbooks | selectattr('workbook_number', 'equalto', i) | list | first %}
+      <tr>
+        <td>{{ i }}</td>
+        {% if submission %}
+          <td>{{ 'Marked' if submission.marked else 'Submitted' }}</td>
+          <td>{{ submission.submission_time.strftime('%Y-%m-%d %H:%M') }}</td>
           <td>
-            {% if filename %}
-              {{ filename }}
+            {% set deadline = submission.submission_time + timedelta(days=14) %}
+            {% if deadline > now %}
+              {{ (deadline - now).days }} days {{ (deadline - now).seconds // 3600 }} hrs
             {% else %}
-              -
+              Overdue
             {% endif %}
           </td>
+          <td>{{ submission.feedback or 'N/A' }}</td>
           <td>
-            {% if status == 'Awaiting submission' %}
-              <span class="status-awaiting">{{ status }}</span>
-            {% elif status == 'Awaiting Marking' %}
-              <span class="status-marking">{{ status }}</span>
-            {% elif status == 'Marked' %}
-              <span class="status-marked">{{ status }}</span>
-            {% else %}
-              {{ status }}
-            {% endif %}
+            {% if submission.is_referral %}
+              {% if submission.corrected_submission_path %}
+                Submitted (<a href="{{ url_for('uploaded_file', filename=submission.corrected_submission_path) }}">View</a>)
+              {% else %}
+              <form method="POST" enctype="multipart/form-data" class="d-inline">
+                <input type="hidden" name="workbook_number" value="{{ i }}">
+                <input type="file" name="referral_file" required>
+                <button type="submit" class="btn btn-warning btn-sm mt-1">Upload Referral</button>
+              </form>
+              {% endif %}
+            {% else %} – {% endif %}
           </td>
-          <td class="score-box">
-            {% if score is not none %}
-              {{ score }}
-            {% else %}
-              -
-            {% endif %}
-          </td>
-          <td>
-            {% if status == 'Awaiting submission' or status == 'Awaiting Marking' %}
-            <form action="{{ url_for('upload_submission') }}" method="POST" enctype="multipart/form-data">
-              <input type="hidden" name="slot_number" value="{{ slot }}">
-              <input type="file" name="file" accept=".doc,.docx" required>
-              <input type="submit" value="Upload">
-            </form>
-            {% else %}
-              -
-            {% endif %}
-          </td>
-        </tr>
+        {% else %}
+          <td>Awaiting submission</td>
+          <td>–</td>
+          <td>–</td>
+          <td>–</td>
+          <td>–</td>
+        {% endif %}
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <h4 class="mt-5">Submit a Workbook</h4>
+  <form method="POST" enctype="multipart/form-data">
+    <div class="mb-3">
+      <label for="workbook_number" class="form-label">Workbook Number</label>
+      <select class="form-select" name="workbook_number" required>
+        {% for i in range(1, required + 1) %}
+          <option value="{{ i }}">Workbook {{ i }}</option>
         {% endfor %}
-      </tbody>
-    </table>
-  </div>
-</body>
-</html>
+      </select>
+    </div>
+    <div class="mb-3">
+      <label for="file" class="form-label">Upload File</label>
+      <input type="file" class="form-control" name="file" required>
+    </div>
+    <div class="d-grid">
+      <button type="submit" class="btn btn-success">Upload</button>
+    </div>
+  </form>
+</div>
+{% endblock %}

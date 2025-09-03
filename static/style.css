@@ -1,0 +1,164 @@
+body {
+    font-family: 'Segoe UI', Tahoma, sans-serif;
+    margin: 0;
+    padding: 0;
+    background-color: #FFFFFF;
+    color: #000000;
+}
+
+.header {
+    background-color: #FFFFFF;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 20px;
+    border-bottom: 2px solid #60BD4F;
+}
+
+.logo {
+    height: 80px;
+    margin-right: 20px;
+}
+
+h1 {
+    margin: 0;
+    font-size: 24px;
+    color: #000000;
+}
+
+.logout {
+    font-size: 16px;
+    color: #60BD4F;
+    text-decoration: none;
+    font-weight: bold;
+}
+
+.logout:hover {
+    text-decoration: underline;
+}
+
+.dashboard-container {
+    display: flex;
+}
+
+.sidebar {
+    width: 200px;
+    background-color: #1A1A1A;
+    color: white;
+    min-height: 100vh;
+    padding: 20px;
+}
+
+.sidebar ul {
+    list-style-type: none;
+    padding: 0;
+}
+
+.sidebar ul li {
+    margin-bottom: 10px;
+}
+
+.sidebar ul li a {
+    color: white;
+    text-decoration: none;
+    font-weight: bold;
+}
+
+.sidebar ul li a:hover {
+    color: #60BD4F;
+}
+
+.main-content {
+    flex-grow: 1;
+    padding: 20px;
+    background-color: #FFFFFF;
+}
+
+.form-container {
+    background-color: #F9F9F9;
+    padding: 30px;
+    border-radius: 8px;
+    box-shadow: 0 0 10px rgba(0, 0, 0, 0.05);
+    max-width: 400px;
+    margin: 40px auto;
+}
+
+input[type="text"],
+input[type="password"],
+select {
+    width: 100%;
+    padding: 10px;
+    margin-bottom: 12px;
+    border: 1px solid #CCC;
+    border-radius: 4px;
+}
+
+button {
+    background-color: #60BD4F;
+    color: white;
+    border: none;
+    padding: 10px 16px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-weight: bold;
+}
+
+button:hover {
+    background-color: #4CA73D;
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 20px;
+    font-size: 14px;
+}
+
+th, td {
+    border: 1px solid #DDD;
+    padding: 10px;
+    text-align: center;
+}
+
+th {
+    background-color: #60BD4F;
+    color: white;
+}
+
+.subtitle {
+    font-style: italic;
+    margin-bottom: 20px;
+    color: #444444;
+}
+
+.flashes {
+    list-style-type: none;
+    padding: 0;
+    color: #D8000C;
+}
+
+.status-label {
+  display: inline-block;
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-weight: bold;
+  color: #000;
+}
+
+/* Match Jinja2 output (spaces -> _, dashes -> _) */
+.marked___pass {
+  background-color: #d4edda; /* pastel green */
+}
+
+.marked___referal {
+  background-color: #ffeeba; /* pastel orange */
+}
+
+.marked___fail {
+  background-color: #f8d7da; /* pastel red */
+}
+
+.awaiting_submission {
+  background-color: #e2e3e5; /* pastel grey */
+}
+

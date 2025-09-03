@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+{% block title %}Marker View: {{ student.username }}{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+  <h4>Student: <strong>{{ student.username }}</strong> | Course: <strong>{{ student.course }}</strong></h4>
+
+  <table class="table table-bordered align-middle small mt-3">
+    <thead class="table-light">
+      <tr>
+        <th>Workbook</th>
+        <th>Status</th>
+        <th>Submission</th>
+        <th>Corrected</th>
+        <th>Grade</th>
+        <th>Feedback</th>
+        <th>Upload Corrected</th>
+        <th>Save</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for i in range(1, required + 1) %}
+        {% set attempts = workbooks | selectattr('workbook_number', 'equalto', i) | list %}
+        {% set latest = attempts[-1] if attempts else None %}
+        <tr>
+          <td>Workbook {{ i }}</td>
+          <td>
+            {% if latest %}
+              {% if latest.score == 100 %}
+                <span class="badge bg-success">Pass</span>
+              {% elif latest.score == 50 %}
+                <span class="badge bg-warning text-dark">Refer</span>
+              {% elif latest.score == 0 %}
+                <span class="badge bg-danger">Fail</span>
+              {% else %}
+                <span class="badge bg-secondary">Awaiting</span>
+              {% endif %}
+            {% else %}
+              <span class="badge bg-secondary">No Submission</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if latest %}
+              <a href="{{ url_for('uploaded_file', filename=latest.file_path) }}" target="_blank">View</a>
+            {% else %}
+              —
+            {% endif %}
+          </td>
+          <td>
+            {% if latest and latest.corrected_submission_path %}
+              <a href="{{ url_for('uploaded_file', filename=latest.corrected_submission_path) }}" target="_blank">Corrected</a>
+            {% else %}
+              —
+            {% endif %}
+          </td>
+
+          <td colspan="4">
+            {% if latest %}
+              <form action="{{ url_for('mark_workbook', submission_id=latest.id) }}" method="post" enctype="multipart/form-data" class="d-flex align-items-center gap-2">
+                <select name="score" class="form-select form-select-sm w-auto" onchange="toggleReferralUpload(this, {{ i }})">
+                  <option value="Pass" {% if latest.score == 100 %}selected{% endif %}>Pass</option>
+                  <option value="Refer" {% if latest.score == 50 %}selected{% endif %}>Refer</option>
+                  <option value="Fail" {% if latest.score == 0 %}selected{% endif %}>Fail</option>
+                </select>
+
+                <input type="text" name="feedback" class="form-control form-control-sm" value="{{ latest.feedback or '' }}" placeholder="Feedback" style="min-width: 180px;">
+
+                <input type="file" name="corrected_file" class="form-control form-control-sm w-auto" id="referral-upload-{{ i }}" style="{% if latest.score != 50 %}display:none;{% endif %}">
+
+                <button type="submit" class="btn btn-sm btn-primary">Save</button>
+              </form>
+            {% else %}
+              <span class="text-muted">Awaiting submission</span>
+            {% endif %}
+          </td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <div class="d-flex justify-content-between mt-4">
+    {% if prev_id %}
+      <a class="btn btn-outline-secondary" href="{{ url_for('marker_view_student', student_id=prev_id) }}">← Previous</a>
+    {% else %}
+      <div></div>
+    {% endif %}
+    {% if next_id %}
+      <a class="btn btn-outline-secondary" href="{{ url_for('marker_view_student', student_id=next_id) }}">Next →</a>
+    {% endif %}
+  </div>
+</div>
+
+<script>
+function toggleReferralUpload(select, i) {
+  const show = select.value === "Refer";
+  document.getElementById("referral-upload-" + i).style.display = show ? "block" : "none";
+}
+</script>
+{% endblock %}
