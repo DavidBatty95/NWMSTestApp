@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block title %}Marker Activity Feed{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+  <h2 class="mb-4">Recent Activity Feed</h2>
+
+  {% if submissions %}
+    <table class="table table-striped table-bordered">
+      <thead class="table-light">
+        <tr>
+          <th>Student</th>
+          <th>Course</th>
+          <th>Workbook</th>
+          <th>Submitted</th>
+          <th>Download</th>
+          <th>Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for submission in submissions %}
+        <tr>
+          <td>{{ submission.student.username }}</td>
+          <td>{{ submission.student.course }}</td>
+          <td>Workbook {{ submission.workbook_number }}</td>
+          <td>{{ submission.submission_time.strftime('%Y-%m-%d %H:%M') }}</td>
+          <td>
+            {% if submission.file_path %}
+              <a href="{{ url_for('uploaded_file', filename=submission.file_path) }}" target="_blank">Download</a>
+            {% else %}
+              —
+            {% endif %}
+          </td>
+          <td>
+            {% if submission.marked %}
+              {% if submission.score == 1 %}
+                <span class="badge bg-success">Pass</span>
+              {% elif submission.score == 2 %}
+                <span class="badge bg-warning text-dark">Refer</span>
+              {% else %}
+                <span class="badge bg-danger">Fail</span>
+              {% endif %}
+            {% else %}
+              <span class="badge bg-secondary">Awaiting Marking</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <div class="alert alert-info">No recent submissions to display.</div>
+  {% endif %}
+</div>
+{% endblock %}
