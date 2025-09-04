@@ -1,83 +1,109 @@
-{% extends "base.html" %}
-{% block title %}Student Dashboard{% endblock %}
+{% extends 'base.html' %}
+{% block title %}Student · Dashboard{% endblock %}
 
 {% block content %}
-<div class="container mt-5">
-  <h2 class="mb-3">Welcome, {{ current_user.username }}</h2>
-  <p><strong>Enrolled Course:</strong> {{ current_user.course }}</p>
-  <p><strong>Status:</strong> {{ status }}</p>
+<h2 class="mb-1">My Workbooks</h2>
+<p class="text-muted">Submit your workbooks and track feedback & attempts.</p>
 
-  <h4 class="mt-4">Your Workbooks</h4>
-  <table class="table table-striped">
-    <thead>
-      <tr>
-        <th>Workbook Number</th>
-        <th>Status</th>
-        <th>Submission Time</th>
-        <th>Time Left for Marking</th>
-        <th>Feedback</th>
-        <th>Referral Upload</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for i in range(1, required + 1) %}
-      {% set submission = workbooks | selectattr('workbook_number', 'equalto', i) | list | first %}
-      <tr>
-        <td>{{ i }}</td>
-        {% if submission %}
-          <td>{{ 'Marked' if submission.marked else 'Submitted' }}</td>
-          <td>{{ submission.submission_time.strftime('%Y-%m-%d %H:%M') }}</td>
-          <td>
-            {% set deadline = submission.submission_time + timedelta(days=14) %}
-            {% if deadline > now %}
-              {{ (deadline - now).days }} days {{ (deadline - now).seconds // 3600 }} hrs
-            {% else %}
-              Overdue
-            {% endif %}
-          </td>
-          <td>{{ submission.feedback or 'N/A' }}</td>
-          <td>
-            {% if submission.is_referral %}
-              {% if submission.corrected_submission_path %}
-                Submitted (<a href="{{ url_for('uploaded_file', filename=submission.corrected_submission_path) }}">View</a>)
+<div class="card shadow-sm">
+  <div class="card-body">
+    <div class="table-responsive">
+      <table class="table table-hover align-middle mb-0">
+        <thead class="table-light">
+          <tr>
+            <th style="min-width: 120px;">Workbook</th>
+            <th>Status</th>
+            <th class="text-center" style="width:120px;">Attempts Left</th>
+            <th>Last Submitted</th>
+            <th>Marker Feedback</th>
+            <th class="text-end" style="min-width: 260px;">Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in items %}
+          <tr>
+            <td class="fw-semibold">Workbook {{ row.wb_number }}</td>
+
+            <!-- Status badge -->
+            <td>
+              <span class="badge {{ row.badge }}">{{ row.label }}</span>
+            </td>
+
+            <!-- Attempts left (just the number) -->
+            <td class="text-center">
+              {% if row.attempts_so_far == 0 %}
+                <span class="text-muted">—</span>
               {% else %}
-              <form method="POST" enctype="multipart/form-data" class="d-inline">
-                <input type="hidden" name="workbook_number" value="{{ i }}">
-                <input type="file" name="referral_file" required>
-                <button type="submit" class="btn btn-warning btn-sm mt-1">Upload Referral</button>
-              </form>
+                <span class="fw-semibold">{{ row.attempts_left }}</span>
               {% endif %}
-            {% else %} – {% endif %}
-          </td>
-        {% else %}
-          <td>Awaiting submission</td>
-          <td>–</td>
-          <td>–</td>
-          <td>–</td>
-          <td>–</td>
-        {% endif %}
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
+            </td>
 
-  <h4 class="mt-5">Submit a Workbook</h4>
-  <form method="POST" enctype="multipart/form-data">
-    <div class="mb-3">
-      <label for="workbook_number" class="form-label">Workbook Number</label>
-      <select class="form-select" name="workbook_number" required>
-        {% for i in range(1, required + 1) %}
-          <option value="{{ i }}">Workbook {{ i }}</option>
-        {% endfor %}
-      </select>
+            <!-- Last submitted -->
+            <td>
+              {% if row.latest %}
+                <span title="{{ row.latest.submission_time }}">
+                  {{ row.latest.submission_time.strftime('%Y-%m-%d %H:%M') }}
+                </span>
+              {% else %}
+                <span class="text-muted">—</span>
+              {% endif %}
+            </td>
+
+            <!-- Feedback -->
+            <td>
+              {% if row.latest and row.latest.feedback %}
+                <span class="small">{{ row.latest.feedback }}</span>
+              {% else %}
+                <span class="text-muted small">—</span>
+              {% endif %}
+            </td>
+
+            <!-- Actions -->
+            <td class="text-end">
+              {% if row.can_upload %}
+                <!-- First submission -->
+                <form action="{{ url_for('student_dashboard') }}" method="post" enctype="multipart/form-data" class="d-inline-flex align-items-center gap-2">
+                  <input type="hidden" name="workbook_number" value="{{ row.wb_number }}">
+                  <input type="file" name="file" class="form-control form-control-sm" required>
+                  <button type="submit" class="btn btn-sm btn-primary">Upload</button>
+                </form>
+
+              {% elif row.can_reattempt %}
+                <!-- Reattempt after referral -->
+                <div class="mb-1 small">
+                  Attempts left: <span class="fw-semibold">{{ row.attempts_left }}</span>
+                </div>
+                <form action="{{ url_for('student_dashboard') }}" method="post" enctype="multipart/form-data" class="d-inline-flex align-items-center gap-2">
+                  <input type="hidden" name="workbook_number" value="{{ row.wb_number }}">
+                  <input type="file" name="referral_file" class="form-control form-control-sm" required>
+                  <button type="submit" class="btn btn-sm btn-danger">Re-upload</button>
+                </form>
+                {% if row.latest and row.latest.corrected_submission_path %}
+                  <div class="small text-muted mt-1">Reattempt uploaded: {{ row.latest.corrected_submission_path }}</div>
+                {% endif %}
+
+              {% else %}
+                <span class="text-muted small">No action available</span>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+
+          {% if items|length == 0 %}
+          <tr><td colspan="6" class="text-center text-muted py-4">No workbooks for your course.</td></tr>
+          {% endif %}
+        </tbody>
+      </table>
     </div>
-    <div class="mb-3">
-      <label for="file" class="form-label">Upload File</label>
-      <input type="file" class="form-control" name="file" required>
-    </div>
-    <div class="d-grid">
-      <button type="submit" class="btn btn-success">Upload</button>
-    </div>
-  </form>
+  </div>
+</div>
+
+<!-- Legend -->
+<div class="mt-3 small">
+  <span class="badge bg-success">Marked Pass</span>
+  <span class="badge bg-secondary">Awaiting submission</span>
+  <span class="badge bg-warning text-dark">Submitted</span>
+  <span class="badge bg-danger">Waiting for reattempt</span>
+  <span class="ms-2 text-muted">Max 3 attempts per workbook.</span>
 </div>
 {% endblock %}

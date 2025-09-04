@@ -1,0 +1,51 @@
+{% extends 'base.html' %}
+{% block title %}Marker · My Students{% endblock %}
+
+{% block content %}
+<h2 class="mb-3">My Students</h2>
+
+<div class="card shadow-sm">
+  <div class="card-body">
+    <div class="table-responsive">
+      <table class="table table-hover align-middle mb-0">
+        <thead class="table-light">
+          <tr>
+            <th style="min-width:180px;">Name</th>
+            <th>Email</th>
+            <th>Course</th>
+            <th>Status</th>
+            <th class="text-end" style="width:120px;">Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for item in students %}
+            <tr>
+              <td>
+                <div class="fw-semibold">{{ item.student.username }}</div>
+                <div class="small text-muted">ID: {{ item.student.id }}</div>
+              </td>
+              <td><a href="mailto:{{ item.student.email }}">{{ item.student.email }}</a></td>
+              <td>{{ item.student.course or '—' }}</td>
+              <td>
+                {% if item.status == 'Pass' %}
+                  <span class="badge bg-success">Passed</span>
+                {% elif item.status == 'Fail' %}
+                  <span class="badge bg-danger">Failed</span>
+                {% else %}
+                  <span class="badge bg-warning text-dark">In Progress</span>
+                {% endif %}
+              </td>
+              <td class="text-end">
+                <a href="{{ url_for('marker_view_student', student_id=item.student.id) }}" class="btn btn-sm btn-primary">Open</a>
+              </td>
+            </tr>
+          {% endfor %}
+          {% if students|length == 0 %}
+            <tr><td colspan="5" class="text-center text-muted py-4">No students assigned.</td></tr>
+          {% endif %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}

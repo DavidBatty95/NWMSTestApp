@@ -1,0 +1,107 @@
+{% extends 'base.html' %}
+{% block title %}Admin · Assign Students{% endblock %}
+
+{% block content %}
+<h2 class="mb-3">Assign Students to Markers</h2>
+
+<div class="mb-3">
+  <input id="searchInput" class="form-control form-control-sm" type="search" placeholder="Search students, emails, markers…" aria-label="Search">
+</div>
+
+<div class="card shadow-sm">
+  <div class="table-responsive">
+    <table class="table table-sm align-middle mb-0 admin-students-table">
+      <thead class="table-light">
+        <tr class="small text-uppercase">
+          <th style="min-width:200px;">Student (ID)</th>
+          <th style="min-width:200px;">Email</th>
+          <th style="min-width:90px;">Course</th>
+          <th style="min-width:260px;">Assigned Marker</th>
+          <th class="text-end" style="width:90px;">Action</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for s in students %}
+          {% set current_marker_id = current_marker_by_student.get(s.id) %}
+          <tr class="student-row">
+            <!-- Student (single line) -->
+            <td class="text-truncate" title="{{ s.username }} (ID: {{ s.id }})">
+              <span class="fw-semibold">{{ s.username }}</span>
+              <span class="text-muted">(#{{ s.id }})</span>
+              {% if not current_marker_id %}
+                <span class="badge bg-secondary ms-1">Unassigned</span>
+              {% endif %}
+            </td>
+
+            <!-- Email (truncate on small screens) -->
+            <td class="text-truncate" style="max-width:260px;">
+              <a href="mailto:{{ s.email }}" class="text-decoration-none">{{ s.email }}</a>
+            </td>
+
+            <!-- Course -->
+            <td>{{ s.course or '—' }}</td>
+
+            <!-- Inline select (no extra labels, one line) -->
+            <td>
+              <form action="{{ url_for('admin_assign') }}" method="post" class="d-flex align-items-center gap-2 m-0 p-0">
+                <input type="hidden" name="student_id" value="{{ s.id }}">
+                <select name="marker_id" class="form-select form-select-sm w-100" required>
+                  <option value="" disabled {{ 'selected' if not current_marker_id }}>Select…</option>
+                  {% for m in markers %}
+                    <option value="{{ m.id }}" {{ 'selected' if current_marker_id == m.id }}>
+                      {{ m.username }}
+                    </option>
+                  {% endfor %}
+                </select>
+                <button type="submit" class="btn btn-sm btn-primary">Save</button>
+              </form>
+            </td>
+
+            <!-- Action hint (right aligned, single word) -->
+            <td class="text-end small">
+              {% if current_marker_id %}
+                <span class="text-muted">Assigned</span>
+              {% else %}
+                <span class="text-danger">Needed</span>
+              {% endif %}
+            </td>
+          </tr>
+        {% endfor %}
+
+        {% if students|length == 0 %}
+          <tr><td colspan="5" class="text-center text-muted py-4">No students found.</td></tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<style>
+  /* Compact row height & spacing */
+  .admin-students-table td, .admin-students-table th { padding-top:.5rem; padding-bottom:.5rem; }
+  .admin-students-table .form-select, .admin-students-table .btn { margin:0; }
+  .admin-students-table .badge { font-size:.65rem; vertical-align:middle; }
+  /* Keep rows on one line where possible */
+  .admin-students-table .text-truncate { max-width: 320px; }
+  @media (max-width: 992px){
+    .admin-students-table .text-truncate { max-width: 220px; }
+  }
+  @media (max-width: 576px){
+    .admin-students-table .text-truncate { max-width: 160px; }
+  }
+</style>
+
+<script>
+  (function () {
+    const input = document.getElementById('searchInput');
+    if (!input) return;
+    input.addEventListener('input', function () {
+      const term = this.value.toLowerCase().trim();
+      document.querySelectorAll('.admin-students-table tbody tr.student-row').forEach(function (row) {
+        const text = row.innerText.toLowerCase();
+        row.style.display = text.includes(term) ? '' : 'none';
+      });
+    });
+  })();
+</script>
+{% endblock %}

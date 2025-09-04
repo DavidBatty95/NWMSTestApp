@@ -1,18 +1,22 @@
-{% extends 'base.html' %}
+{% extends 'auth_base.html' %}
 {% block title %}Login{% endblock %}
 
 {% block content %}
-<div class="login-container">
-  <h2>Login to Your Account</h2>
-  <form method="post" class="form-card login-form">
-    <label for="username">Username:</label>
+<div class="auth-card">
+  <img src="{{ url_for('static', filename='images/nwms_logo.png') }}" alt="NWMS Logo">
+
+
+
+  <h2>Workbook Portal Login</h2>
+  <form method="post">
+    <label for="username">Username</label>
     <input type="text" name="username" required>
 
-    <label for="password">Password:</label>
+    <label for="password">Password</label>
     <input type="password" name="password" required>
 
-    <input type="submit" value="Login">
+    <button type="submit">Login</button>
   </form>
-  <p style="text-align: center;">Don't have an account? <a href="{{ url_for('register') }}">Register here</a>.</p>
+  <p>Don't have an account? <a href="{{ url_for('register') }}">Register here</a>.</p>
 </div>
 {% endblock %}

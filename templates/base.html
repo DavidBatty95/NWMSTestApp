@@ -1,123 +1,195 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <title>{% block title %}NWMS{% endblock %}</title>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Open+Sans:400,600&display=swap">
-  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <meta charset="utf-8">
+  <title>{% block title %}NWMS Workbook Portal{% endblock %}</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+
   <style>
-    body {
-      margin: 0;
-      font-family: 'Open Sans', sans-serif;
-      background-color: #f7f9fa;
-      color: #333;
+    /* ===== NWMS Brand ===== */
+    :root{
+      --nwms-black:#0B0B0C;
+      --nwms-black-2:#121315;
+      --nwms-green:#4CAF50;
+      --nwms-green-2:#2E7D32;
+      --nwms-text:#E8E9EA;
+      --nwms-muted:#AEB4BA;
+      --divider:rgba(255,255,255,.08);
+      --shadow:0 8px 30px rgba(0,0,0,.35);
+      --radius:12px;
+      --sidebar-w:260px;
     }
-    header {
-      background-color: #4CA73D;
-      color: white;
-      padding: 15px 30px;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
+
+    html,body{height:100%;}
+    body{background:#f5f6f7;}
+
+    .layout{
+      min-height:100vh;
+      display:flex;
+      background:
+        radial-gradient(1200px 600px at -200px -100px, rgba(76,175,80,.08), transparent 60%),
+        radial-gradient(800px 500px at 120% 120%, rgba(46,125,50,.06), transparent 60%);
     }
-    header img {
-      height: 100px;
+
+    /* ===== Sidebar ===== */
+    .sidebar{
+      width:var(--sidebar-w);
+      background:linear-gradient(180deg, var(--nwms-black) 0%, var(--nwms-black-2) 100%);
+      color:var(--nwms-text);
+      box-shadow:var(--shadow);
+      position:sticky; top:0; align-self:flex-start;
+      height:100vh;
+      padding:20px 18px;
+      display:flex; flex-direction:column;
+      border-right:1px solid var(--divider);
     }
-    header h1 {
-      margin: 0;
-      font-size: 24px;
+
+    .brand{
+      background:#fff;
+      border-radius:10px;
+      padding:14px 12px;
+      display:flex; align-items:center; justify-content:center;
+      box-shadow:0 6px 18px rgba(0,0,0,.15);
     }
-    .logout-btn {
-      background-color: #0B3D0B;
-      color: white;
-      padding: 8px 14px;
-      border-radius: 4px;
-      text-decoration: none;
-      font-weight: bold;
+    .brand img{max-width:170px;height:auto;display:block;}
+
+    .portal-banner{
+      margin:14px 0 8px 0;
+      background:var(--nwms-green);
+      color:#fff; font-weight:700; letter-spacing:.2px;
+      border-radius:10px; padding:8px 12px; text-align:center;
+      box-shadow:0 4px 14px rgba(76,175,80,.35);
     }
-    .dashboard-container {
-      display: flex;
-      min-height: calc(100vh - 80px);
+
+    .nav-title{
+      font-size:.75rem; text-transform:uppercase; letter-spacing:.12rem;
+      color:var(--nwms-muted);
+      padding:10px 10px 4px 10px;
+      margin-top:6px;
     }
-    .sidebar {
-      width: 200px;
-      background-color: #4CA73D;
-      padding: 20px;
+    .nav-list{list-style:none; padding:6px; margin:0; border-top:1px solid var(--divider);}
+    .nav-item{position:relative; margin:4px 0;}
+
+    .nav-link{
+      display:flex; align-items:center; gap:.6rem;
+      color:var(--nwms-text); text-decoration:none;
+      padding:10px 12px;
+      border-radius:10px;
+      transition:all .18s ease;
+      outline:none; position:relative;
     }
-    .sidebar ul {
-      list-style: none;
-      padding: 0;
+    .nav-link .dot{
+      width:8px; height:8px; border-radius:50%;
+      background:transparent; border:2px solid var(--nwms-muted);
+      transition:border-color .18s ease, background .18s ease;
     }
-    .sidebar li {
-      margin-bottom: 12px;
+    .nav-link:hover{ background:rgba(76,175,80,.12); }
+    .nav-link:hover .dot{ border-color:var(--nwms-green); }
+
+    .nav-link.active{
+      background:rgba(76,175,80,.18);
+      box-shadow:inset 0 0 0 1px rgba(76,175,80,.22);
     }
-    .sidebar a {
-      color: white;
-      text-decoration: none;
-      font-weight: bold;
+    .nav-link.active::before{
+      content:"";
+      position:absolute; left:-6px; top:50%; transform:translateY(-50%);
+      width:4px; height:60%; border-radius:4px;
+      background:linear-gradient(180deg,var(--nwms-green),var(--nwms-green-2));
+      box-shadow:0 0 0 2px rgba(76,175,80,.25);
     }
-    .sidebar a:hover {
-      color: #55B947;
-    }
-    .main-content {
-      flex-grow: 1;
-      padding: 30px;
-    }
-    .flashes {
-      padding-left: 0;
-      list-style: none;
-    }
-    .flashes li {
-      padding: 10px;
-      background-color: #f8d7da;
-      color: #721c24;
-      border: 1px solid #f5c6cb;
-      margin-bottom: 10px;
-      border-radius: 5px;
-    }
+    .nav-link.active .dot{ background:var(--nwms-green); border-color:var(--nwms-green); }
+
+    .nav-link:focus-visible{ box-shadow:0 0 0 3px rgba(76,175,80,.35); }
+
+    .logout{margin-top:auto; padding-top:8px; border-top:1px solid var(--divider);}
+    .logout .nav-link{color:#ffecec;}
+    .logout .nav-link:hover{background:rgba(231,76,60,.18);}
+
+    /* ===== Content ===== */
+    .content{flex:1; display:flex;}
+    .content-inner{flex:1; max-width:1200px; margin:0 auto; padding:28px 24px;}
+
+    .card.shadow-sm{border-radius:var(--radius); border:1px solid #e9ecef;}
   </style>
 </head>
 <body>
-  <header>
-    <div style="display: flex; align-items: center; gap: 20px;">
-      <img src="{{ url_for('static', filename='images/nwms_logo.jpeg') }}" alt="NWMS Logo">
-      <h1>North West Medical Solutions</h1>
-    </div>
-    {% if current_user.is_authenticated %}
-    <a href="{{ url_for('logout') }}" class="logout-btn">Logout</a>
-    {% endif %}
-  </header>
+<div class="layout">
 
-  <div class="dashboard-container">
-    {% if current_user.is_authenticated and request.endpoint not in ['login', 'register'] %}
-    <div class="sidebar">
-      <ul>
-        {% if current_user.role == 'marker' %}
-        <li><a href="{{ url_for('marker_dashboard') }}">Home</a></li>
-        <li><a href="{{ url_for('marker_dashboard') }}">Assigned Students</a></li>
-        {% elif current_user.role == 'admin' %}
-        <li><a href="{{ url_for('admin_dashboard') }}">Home</a></li>
-        <li><a href="{{ url_for('view_users') }}">User List</a></li>
+  <!-- Sidebar: show only when logged in -->
+  {% if current_user.is_authenticated %}
+  <aside class="sidebar">
+    <div class="brand">
+      <img src="{{ url_for('static', filename='images/nwms_logo.png') }}" alt="NWMS Logo">
+    </div>
+
+    <div class="portal-banner">
+      Workbook Portal: {{ current_user.role|capitalize }}
+    </div>
+
+    <div class="nav-block">
+      <div class="nav-title">Navigation</div>
+      <ul class="nav-list">
+        {% if current_user.role == 'admin' %}
+          <li class="nav-item">
+            <a class="nav-link {{ 'active' if request.endpoint == 'admin_dashboard' else '' }}" href="{{ url_for('admin_dashboard') }}">
+              <span class="dot"></span> Dashboard
+            </a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link {{ 'active' if request.endpoint == 'admin_assign' else '' }}" href="{{ url_for('admin_assign') }}">
+              <span class="dot"></span> Assign Students
+            </a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link {{ 'active' if request.endpoint == 'admin_delete_students' else '' }}" href="{{ url_for('admin_delete_students') }}">
+              <span class="dot"></span> Delete Students
+            </a>
+          </li>
+        {% elif current_user.role == 'marker' %}
+          <li class="nav-item">
+            <a class="nav-link {{ 'active' if request.endpoint in ['marker_dashboard','marker_view_student'] else '' }}" href="{{ url_for('marker_dashboard') }}">
+              <span class="dot"></span> Marker Dashboard
+            </a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link {{ 'active' if request.endpoint == 'marker_students' else '' }}" href="{{ url_for('marker_students') }}">
+              <span class="dot"></span> My Students
+            </a>
+          </li>
         {% elif current_user.role == 'student' %}
-        <li><a href="{{ url_for('student_dashboard') }}">My Submissions</a></li>
+          <li class="nav-item">
+            <a class="nav-link {{ 'active' if request.endpoint == 'student_dashboard' else '' }}" href="{{ url_for('student_dashboard') }}">
+              <span class="dot"></span> My Workbooks
+            </a>
+          </li>
         {% endif %}
       </ul>
     </div>
-    {% endif %}
 
-    <div class="main-content">
-      {% with messages = get_flashed_messages() %}
+    <div class="logout">
+      <a class="nav-link" href="{{ url_for('logout') }}">
+        <span class="dot" style="border-color:#ffb3b3;"></span> Logout
+      </a>
+    </div>
+  </aside>
+  {% endif %}
+
+  <!-- Main -->
+  <main class="content">
+    <div class="content-inner">
+      {% with messages = get_flashed_messages(with_categories=true) %}
         {% if messages %}
-          <ul class="flashes">
-            {% for message in messages %}
-              <li>{{ message }}</li>
+          <div class="mb-3">
+            {% for category, message in messages %}
+              <div class="alert alert-{{ category if category else 'info' }} mb-2" role="alert">{{ message }}</div>
             {% endfor %}
-          </ul>
+          </div>
         {% endif %}
       {% endwith %}
-
       {% block content %}{% endblock %}
     </div>
-  </div>
+  </main>
+</div>
 </body>
 </html>

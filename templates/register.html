@@ -1,59 +1,52 @@
-{% extends "base.html" %}
+{% extends 'auth_base.html' %}
 {% block title %}Register{% endblock %}
 
 {% block content %}
-<div class="container mt-5">
-  <div class="row justify-content-center">
-    <div class="col-md-6">
-      <h2 class="mb-4 text-center">Student Registration</h2>
-      <form method="POST">
-        <div class="mb-3">
-          <label for="username" class="form-label">Username</label>
-          <input type="text" class="form-control" id="username" name="username" required>
-        </div>
+<div class="auth-card">
+  <img src="{{ url_for('static', filename='images/nwms_logo.png') }}" alt="NWMS Logo">
 
-        <div class="mb-3">
-          <label for="email" class="form-label">Email</label>
-          <input type="email" class="form-control" id="email" name="email" required>
-        </div>
+  <h2>Create an Account</h2>
+  <form method="post">
+    <label for="username">Username</label>
+    <input type="text" name="username" required>
 
-        <div class="mb-3">
-          <label for="password" class="form-label">Password</label>
-          <input type="password" class="form-control" id="password" name="password" required>
-        </div>
+    <label for="email">Email</label>
+    <input type="email" name="email" required>
 
-        <div class="mb-3">
-          <label for="role" class="form-label">Role</label>
-          <select class="form-select" id="roleSelect" name="role" onchange="toggleCourseSelect()" required>
-            <option value="student">Student</option>
-            <option value="marker">Marker</option>
-            <option value="admin">Admin</option>
-          </select>
-        </div>
+    <label for="password">Password</label>
+    <input type="password" name="password" required>
 
-        <div class="mb-3" id="courseGroup">
-          <label for="course" class="form-label">Select Course</label>
-          <select class="form-select" name="course">
-            <option value="FREC4">FREC4</option>
-            <option value="SALM">SALM</option>
-            <option value="CFR">CFR</option>
-          </select>
-        </div>
+    <label for="role">Role</label>
+    <select id="role" name="role" class="form-select" required onchange="toggleStudentFields()">
+      <option value="student">Student</option>
+      <option value="marker">Marker</option>
+      <option value="admin">Admin</option>
+    </select>
 
-        <div class="d-grid">
-          <button type="submit" class="btn btn-primary">Register</button>
-        </div>
-      </form>
+    <div id="student-fields" style="margin-top:1rem;">
+      <label for="course">Course</label>
+      <select name="course" class="form-select">
+        <option value="">-- None --</option>
+        <option value="FREC4">FREC4</option>
+        <option value="SALM">SALM</option>
+        <option value="CFR">CFR</option>
+      </select>
+
+      <label for="course_passcode">Course Passcode</label>
+      <input type="text" name="course_passcode" placeholder="Enter course code">
     </div>
-  </div>
+
+    <button type="submit">Register</button>
+  </form>
+  <p>Already have an account? <a href="{{ url_for('login') }}">Login here</a>.</p>
 </div>
 
 <script>
-function toggleCourseSelect() {
-  const role = document.getElementById('roleSelect').value;
-  const courseGroup = document.getElementById('courseGroup');
-  courseGroup.style.display = (role === 'student') ? 'block' : 'none';
+function toggleStudentFields() {
+  const role = document.getElementById('role').value;
+  const fields = document.getElementById('student-fields');
+  fields.style.display = (role === 'student') ? 'block' : 'none';
 }
-window.onload = toggleCourseSelect;
+document.addEventListener("DOMContentLoaded", toggleStudentFields);
 </script>
 {% endblock %}

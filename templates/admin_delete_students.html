@@ -1,0 +1,60 @@
+{% extends 'base.html' %}
+{% block title %}Admin · Delete Students{% endblock %}
+{% block content %}
+<h2 class="mb-3 text-danger">Delete Students</h2>
+<p class="text-muted">This permanently removes the student and their submissions.</p>
+
+<div class="mb-3">
+  <input id="searchInput" class="form-control" type="search" placeholder="Search students…" aria-label="Search students">
+</div>
+
+<div class="card shadow-sm">
+  <div class="table-responsive">
+    <table class="table table-hover align-middle mb-0 admin-students-table">
+      <thead class="table-light">
+        <tr>
+          <th style="min-width:180px;">Student</th>
+          <th>Email</th>
+          <th>Course</th>
+          <th class="text-end" style="width:160px;">Action</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for s in students %}
+          <tr class="student-row">
+            <td>
+              <div class="fw-semibold">{{ s.username }}</div>
+              <div class="small text-muted">ID: {{ s.id }}</div>
+            </td>
+            <td><a href="mailto:{{ s.email }}">{{ s.email }}</a></td>
+            <td>{{ s.course or '—' }}</td>
+            <td class="text-end">
+              <form action="{{ url_for('delete_student', student_id=s.id) }}" method="post" class="d-inline"
+                    onsubmit="return confirm('Delete {{ s.username }} and all their submissions? This cannot be undone.');">
+                <button type="submit" class="btn btn-sm btn-danger">Delete</button>
+              </form>
+            </td>
+          </tr>
+        {% endfor %}
+        {% if students|length == 0 %}
+          <tr><td colspan="4" class="text-center text-muted py-4">No students found.</td></tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+  (function () {
+    const input = document.getElementById('searchInput');
+    if (!input) return;
+    input.addEventListener('input', function () {
+      const term = this.value.toLowerCase().trim();
+      document.querySelectorAll('.admin-students-table tbody tr.student-row').forEach(function (row) {
+        const text = row.innerText.toLowerCase();
+        row.style.display = text.includes(term) ? '' : 'none';
+      });
+    });
+  })();
+</script>
+{% endblock %}
