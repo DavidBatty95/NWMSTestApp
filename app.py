@@ -1,4 +1,4 @@
-from flask import Flask, render_template, redirect, url_for, request, flash, send_from_directory
+from flask import Flask, render_template, redirect, url_for, request, flash, send_from_directory, abort  # >>> NEW (abort)
 from flask_sqlalchemy import SQLAlchemy
 from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -47,6 +47,7 @@ class WorkbookSubmission(db.Model):
 
     # This is the fix:
     student = db.relationship('User', foreign_keys=[student_id])
+
 class Assignment(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     student_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False, unique=True)
@@ -83,6 +84,19 @@ def get_marking_deadline(submission):
     days = time_left.days
     hours = time_left.seconds // 3600
     return max(days, 0), max(hours, 0), deadline
+
+# >>> NEW: helper to get only assigned students for a given marker
+def get_assigned_students_for_marker(marker_id):
+    return (
+        db.session.query(User)
+        .join(Assignment, Assignment.student_id == User.id)
+        .filter(User.role == 'student', Assignment.marker_id == marker_id)
+        .all()
+    )
+
+# >>> NEW: helper to check if marker is assigned to a student
+def marker_is_assigned_to_student(marker_id, student_id):
+    return Assignment.query.filter_by(marker_id=marker_id, student_id=student_id).first() is not None
 
 @app.route('/')
 def index():
@@ -185,7 +199,9 @@ def marker_dashboard():
     if current_user.role != 'marker':
         return redirect(url_for('login'))
 
-    students = User.query.filter_by(role='student').all()
+    # >>> NEW: only students assigned to this marker
+    students = get_assigned_students_for_marker(current_user.id)
+
     grouped = {}
     for student in students:
         course = student.course or "Unknown"
@@ -195,11 +211,21 @@ def marker_dashboard():
             'status': get_student_status(student, COURSE_WORKBOOKS.get(course, 1))
         })
 
-    # Get recent submissions for activity feed
-    recent_submissions = WorkbookSubmission.query.order_by(WorkbookSubmission.submission_time.desc()).limit(10).all()
+    # >>> NEW: recent submissions restricted to assigned students
+    student_ids = [s.id for s in students]
+    if student_ids:
+        recent_submissions = (
+            WorkbookSubmission.query
+            .filter(WorkbookSubmission.student_id.in_(student_ids))
+            .order_by(WorkbookSubmission.submission_time.desc())
+            .limit(10)
+            .all()
+        )
+    else:
+        recent_submissions = []
 
     # Create a dictionary to quickly look up usernames by ID
-    users = {u.id: u for u in User.query.all()}
+    users = {u.id: u for u in User.query.filter(User.id.in_(student_ids)).all()}  # >>> tightened to only needed users
 
     return render_template(
         'marker_dashboard.html',
@@ -208,7 +234,7 @@ def marker_dashboard():
         users=users,
         now=datetime.utcnow(),
         timedelta=timedelta,
-        COURSE_WORKBOOKS=COURSE_WORKBOOKS 
+        COURSE_WORKBOOKS=COURSE_WORKBOOKS
     )
 
 @app.route('/admin_dashboard', methods=['GET', 'POST'])
@@ -266,13 +292,19 @@ def marker_view_student(student_id):
     if current_user.role != 'marker':
         return redirect(url_for('login'))
 
+    # >>> NEW: enforce assignment ownership
+    if not marker_is_assigned_to_student(current_user.id, student_id):
+        abort(403)
+
     student = User.query.get_or_404(student_id)
     workbooks = WorkbookSubmission.query.filter_by(student_id=student.id).all()
     required = COURSE_WORKBOOKS.get(student.course, 1)
     workbooks_dict = {w.workbook_number: w for w in workbooks}
 
-    students = User.query.filter_by(role='student').order_by(User.id).all()
-    student_ids = [s.id for s in students]
+    # >>> NEW: navigation limited to assigned cohort
+    assigned_students = get_assigned_students_for_marker(current_user.id)
+    students_sorted = sorted(assigned_students, key=lambda s: s.id)
+    student_ids = [s.id for s in students_sorted]
     current_index = student_ids.index(student.id)
     prev_id = student_ids[current_index - 1] if current_index > 0 else None
     next_id = student_ids[current_index + 1] if current_index < len(student_ids) - 1 else None
@@ -297,6 +329,11 @@ def mark_workbook(submission_id):
         return redirect(url_for('login'))
 
     submission = WorkbookSubmission.query.get_or_404(submission_id)
+
+    # >>> NEW: block marking if this marker isn't assigned to the student
+    if not marker_is_assigned_to_student(current_user.id, submission.student_id):
+        abort(403)
+
     feedback = request.form.get('feedback')
     score_input = request.form.get('score')
 
