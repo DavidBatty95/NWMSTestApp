@@ -1,4 +1,6 @@
-#!/Users/david/Desktop/NWMSTestApp/venv/bin/python3.12
+#!/bin/sh
+'''exec' "/Users/david/Desktop/Desktop - David’s MacBook Pro (2)/NWMSTestApp/venv/bin/python" "$0" "$@"
+' '''
 # -*- coding: utf-8 -*-
 import re
 import sys
