@@ -1,99 +1,76 @@
-{% extends "base.html" %}
-{% block title %}Marker View: {{ student.username }}{% endblock %}
+{% extends 'base.html' %}
+{% block title %}Marker · View Student{% endblock %}
 
 {% block content %}
-<div class="container mt-4">
-  <h4>Student: <strong>{{ student.username }}</strong> | Course: <strong>{{ student.course }}</strong></h4>
-
-  <table class="table table-bordered align-middle small mt-3">
-    <thead class="table-light">
-      <tr>
-        <th>Workbook</th>
-        <th>Status</th>
-        <th>Submission</th>
-        <th>Corrected</th>
-        <th>Grade</th>
-        <th>Feedback</th>
-        <th>Upload Corrected</th>
-        <th>Save</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for i in range(1, required + 1) %}
-        {% set attempts = workbooks | selectattr('workbook_number', 'equalto', i) | list %}
-        {% set latest = attempts[-1] if attempts else None %}
-        <tr>
-          <td>Workbook {{ i }}</td>
-          <td>
-            {% if latest %}
-              {% if latest.score == 100 %}
-                <span class="badge bg-success">Pass</span>
-              {% elif latest.score == 50 %}
-                <span class="badge bg-warning text-dark">Refer</span>
-              {% elif latest.score == 0 %}
-                <span class="badge bg-danger">Fail</span>
-              {% else %}
-                <span class="badge bg-secondary">Awaiting</span>
-              {% endif %}
-            {% else %}
-              <span class="badge bg-secondary">No Submission</span>
-            {% endif %}
-          </td>
-          <td>
-            {% if latest %}
-              <a href="{{ url_for('uploaded_file', filename=latest.file_path) }}" target="_blank">View</a>
-            {% else %}
-              —
-            {% endif %}
-          </td>
-          <td>
-            {% if latest and latest.corrected_submission_path %}
-              <a href="{{ url_for('uploaded_file', filename=latest.corrected_submission_path) }}" target="_blank">Corrected</a>
-            {% else %}
-              —
-            {% endif %}
-          </td>
-
-          <td colspan="4">
-            {% if latest %}
-              <form action="{{ url_for('mark_workbook', submission_id=latest.id) }}" method="post" enctype="multipart/form-data" class="d-flex align-items-center gap-2">
-                <select name="score" class="form-select form-select-sm w-auto" onchange="toggleReferralUpload(this, {{ i }})">
-                  <option value="Pass" {% if latest.score == 100 %}selected{% endif %}>Pass</option>
-                  <option value="Refer" {% if latest.score == 50 %}selected{% endif %}>Refer</option>
-                  <option value="Fail" {% if latest.score == 0 %}selected{% endif %}>Fail</option>
-                </select>
-
-                <input type="text" name="feedback" class="form-control form-control-sm" value="{{ latest.feedback or '' }}" placeholder="Feedback" style="min-width: 180px;">
-
-                <input type="file" name="corrected_file" class="form-control form-control-sm w-auto" id="referral-upload-{{ i }}" style="{% if latest.score != 50 %}display:none;{% endif %}">
-
-                <button type="submit" class="btn btn-sm btn-primary">Save</button>
-              </form>
-            {% else %}
-              <span class="text-muted">Awaiting submission</span>
-            {% endif %}
-          </td>
-        </tr>
-      {% endfor %}
-    </tbody>
-  </table>
-
-  <div class="d-flex justify-content-between mt-4">
-    {% if prev_id %}
-      <a class="btn btn-outline-secondary" href="{{ url_for('marker_view_student', student_id=prev_id) }}">← Previous</a>
-    {% else %}
-      <div></div>
-    {% endif %}
-    {% if next_id %}
-      <a class="btn btn-outline-secondary" href="{{ url_for('marker_view_student', student_id=next_id) }}">Next →</a>
-    {% endif %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h2 class="mb-0">Student: {{ student.username }}</h2>
+  <div class="d-flex gap-2">
+    <a href="{{ url_for('export_student_report', student_id=student.id) }}" class="btn btn-outline-secondary btn-sm">Export PDF</a>
+    <a href="{{ url_for('marker_dashboard') }}" class="btn btn-sm btn-light">Back</a>
   </div>
 </div>
 
-<script>
-function toggleReferralUpload(select, i) {
-  const show = select.value === "Refer";
-  document.getElementById("referral-upload-" + i).style.display = show ? "block" : "none";
-}
-</script>
+<p class="text-muted mb-3">Course: {{ student.course or '—' }} · Status: {{ status }}</p>
+
+<div class="card shadow-sm">
+  <div class="card-body">
+    <div class="table-responsive">
+      <table class="table table-hover align-middle mb-0">
+        <thead class="table-light">
+          <tr>
+            <th>Workbook</th>
+            <th>Submitted</th>
+            <th>Marked</th>
+            <th>Referral</th>
+            <th>Score</th>
+            <th>Feedback</th>
+            <th class="text-end">Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for w in workbooks %}
+            <tr>
+              <td>#{{ w.workbook_number }}</td>
+              <td>{{ w.submission_time.strftime('%Y-%m-%d %H:%M') }}</td>
+              <td>{% if w.marked %}Yes{% else %}<span class="text-warning">No</span>{% endif %}</td>
+              <td>{% if w.is_referral %}<span class="badge bg-danger">Referral</span>{% else %}<span class="text-muted">—</span>{% endif %}</td>
+              <td>{{ w.score if w.score is not none else '—' }}</td>
+              <td class="small">{{ w.feedback or '—' }}</td>
+              <td class="text-end">
+                <form action="{{ url_for('mark_workbook', submission_id=w.id) }}" method="post" enctype="multipart/form-data" class="d-inline-flex align-items-center gap-2">
+                  <select name="score" class="form-select form-select-sm" required>
+                    <option value="Pass">Pass</option>
+                    <option value="Refer">Refer</option>
+                    <option value="Fail">Fail</option>
+                  </select>
+                  <input type="text" name="feedback" placeholder="Feedback" class="form-control form-control-sm" style="min-width:160px;">
+                  <input type="file" name="corrected_file" class="form-control form-control-sm">
+                  <button type="submit" class="btn btn-sm btn-primary">Save</button>
+                </form>
+              </td>
+            </tr>
+          {% endfor %}
+          {% if workbooks|length == 0 %}
+          <tr><td colspan="7" class="text-center text-muted py-4">No submissions yet.</td></tr>
+          {% endif %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+{% if prev_id or next_id %}
+  <div class="d-flex justify-content-between mt-3">
+    <div>
+      {% if prev_id %}
+        <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('marker_view_student', student_id=prev_id) }}">&larr; Previous</a>
+      {% endif %}
+    </div>
+    <div>
+      {% if next_id %}
+        <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('marker_view_student', student_id=next_id) }}">Next &rarr;</a>
+      {% endif %}
+    </div>
+  </div>
+{% endif %}
 {% endblock %}

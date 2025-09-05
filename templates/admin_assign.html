@@ -24,7 +24,6 @@
         {% for s in students %}
           {% set current_marker_id = current_marker_by_student.get(s.id) %}
           <tr class="student-row">
-            <!-- Student (single line) -->
             <td class="text-truncate" title="{{ s.username }} (ID: {{ s.id }})">
               <span class="fw-semibold">{{ s.username }}</span>
               <span class="text-muted">(#{{ s.id }})</span>
@@ -32,16 +31,10 @@
                 <span class="badge bg-secondary ms-1">Unassigned</span>
               {% endif %}
             </td>
-
-            <!-- Email (truncate on small screens) -->
             <td class="text-truncate" style="max-width:260px;">
               <a href="mailto:{{ s.email }}" class="text-decoration-none">{{ s.email }}</a>
             </td>
-
-            <!-- Course -->
             <td>{{ s.course or '—' }}</td>
-
-            <!-- Inline select (no extra labels, one line) -->
             <td>
               <form action="{{ url_for('admin_assign') }}" method="post" class="d-flex align-items-center gap-2 m-0 p-0">
                 <input type="hidden" name="student_id" value="{{ s.id }}">
@@ -56,8 +49,6 @@
                 <button type="submit" class="btn btn-sm btn-primary">Save</button>
               </form>
             </td>
-
-            <!-- Action hint (right aligned, single word) -->
             <td class="text-end small">
               {% if current_marker_id %}
                 <span class="text-muted">Assigned</span>
@@ -67,7 +58,6 @@
             </td>
           </tr>
         {% endfor %}
-
         {% if students|length == 0 %}
           <tr><td colspan="5" class="text-center text-muted py-4">No students found.</td></tr>
         {% endif %}
@@ -77,18 +67,11 @@
 </div>
 
 <style>
-  /* Compact row height & spacing */
   .admin-students-table td, .admin-students-table th { padding-top:.5rem; padding-bottom:.5rem; }
-  .admin-students-table .form-select, .admin-students-table .btn { margin:0; }
   .admin-students-table .badge { font-size:.65rem; vertical-align:middle; }
-  /* Keep rows on one line where possible */
-  .admin-students-table .text-truncate { max-width: 320px; }
-  @media (max-width: 992px){
-    .admin-students-table .text-truncate { max-width: 220px; }
-  }
-  @media (max-width: 576px){
-    .admin-students-table .text-truncate { max-width: 160px; }
-  }
+  .admin-students-table .text-truncate { max-width:320px; }
+  @media (max-width: 992px){ .admin-students-table .text-truncate { max-width:220px; } }
+  @media (max-width: 576px){ .admin-students-table .text-truncate { max-width:160px; } }
 </style>
 
 <script>

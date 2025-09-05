@@ -1,0 +1,62 @@
+{% extends 'base.html' %}
+{% block title %}Admin · Delete Markers{% endblock %}
+
+{% block content %}
+<h2 class="mb-3">Delete Markers</h2>
+<p class="text-muted">Deleting a marker will unassign all students currently assigned to them. Students remain in the system.</p>
+
+<div class="card shadow-sm">
+  <div class="table-responsive">
+    <table class="table table-sm align-middle mb-0 admin-markers-table">
+      <thead class="table-light">
+        <tr class="small text-uppercase">
+          <th style="min-width:200px;">Marker (ID)</th>
+          <th style="min-width:220px;">Email</th>
+          <th class="text-center" style="width:140px;">Assigned Students</th>
+          <th class="text-end" style="width:120px;">Action</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for m in markers %}
+          {% set count = assigned_counts.get(m.id, 0) %}
+          <tr>
+            <td class="text-truncate" title="{{ m.username }} (#{{ m.id }})">
+              <span class="fw-semibold">{{ m.username }}</span>
+              <span class="text-muted">(#{{ m.id }})</span>
+            </td>
+            <td class="text-truncate" style="max-width:280px;">
+              <a href="mailto:{{ m.email }}" class="text-decoration-none">{{ m.email }}</a>
+            </td>
+            <td class="text-center">
+              {% if count > 0 %}
+                <span class="badge bg-warning text-dark">{{ count }}</span>
+              {% else %}
+                <span class="badge bg-success">0</span>
+              {% endif %}
+            </td>
+            <td class="text-end">
+              <form action="{{ url_for('delete_marker', marker_id=m.id) }}" method="post" class="d-inline">
+                <button type="submit"
+                        class="btn btn-sm {{ 'btn-danger' if count > 0 else 'btn-outline-danger' }}"
+                        onclick="return confirm('Delete marker &quot;{{ m.username }}&quot;? {% if count>0 %}This will unassign {{ count }} student(s).{% endif %}');">
+                  Delete
+                </button>
+              </form>
+            </td>
+          </tr>
+        {% endfor %}
+        {% if markers|length == 0 %}
+          <tr><td colspan="4" class="text-center text-muted py-4">No markers found.</td></tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<style>
+  .admin-markers-table td, .admin-markers-table th { padding-top:.55rem; padding-bottom:.55rem; }
+  .admin-markers-table .text-truncate { max-width:320px; }
+  @media (max-width: 992px){ .admin-markers-table .text-truncate { max-width:220px; } }
+  @media (max-width: 576px){ .admin-markers-table .text-truncate { max-width:160px; } }
+</style>
+{% endblock %}
