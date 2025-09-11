@@ -1,0 +1,96 @@
+{% extends 'base.html' %}
+{% block title %}My Feedback · Workbook {{ workbook_number }}{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h2 class="mb-1">Workbook {{ workbook_number }} — Feedback</h2>
+  <a href="{{ url_for('student_dashboard') }}" class="btn btn-light">← Back to My Workbooks</a>
+</div>
+
+<p class="text-muted mb-3">
+  Submitted: {{ submission.submission_time.strftime('%Y-%m-%d %H:%M') }}
+  &middot;
+  {% if overall == 'Pass' %}
+    <span class="badge bg-success">Overall: Pass</span>
+  {% elif overall == 'Referral' %}
+    <span class="badge bg-danger">Overall: Referral</span>
+  {% elif overall == 'Fail' %}
+    <span class="badge bg-dark">Overall: Fail</span>
+  {% else %}
+    <span class="badge bg-info text-dark">Overall: Marked</span>
+  {% endif %}
+  {% if submission.feedback %}
+    <span class="ms-2 small text-muted">Marker note: {{ submission.feedback }}</span>
+  {% endif %}
+</p>
+
+<div class="row g-3">
+  <!-- Left: PDF viewer -->
+  <div class="col-lg-7">
+    <div class="pdf-pane shadow-sm">
+      {% if pdf_filename %}
+        <embed src="{{ url_for('uploaded_file', filename=pdf_filename) }}"
+               type="application/pdf" class="pdf-embed" />
+      {% else %}
+        <div class="p-4 text-center text-muted">
+          No PDF available to preview for this submission.
+        </div>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- Right: Question feedback list -->
+  <div class="col-lg-5">
+    <div class="card shadow-sm">
+      <div class="card-body">
+        <div class="d-flex align-items-center justify-content-between mb-2">
+          <h5 class="mb-0">Per-question feedback</h5>
+          {% if q_items|length == 0 %}
+            <span class="badge text-bg-light">Summary only</span>
+          {% endif %}
+        </div>
+
+        {% if q_items|length == 0 %}
+          <p class="text-muted mb-0 small">
+            The marker did not record per-question feedback for this attempt.
+            You can still see overall status above and any general notes.
+          </p>
+        {% else %}
+          <div class="question-list">
+            {% for q in q_items %}
+              <div class="q-card {{ 'pass' if q.status=='Pass' else 'refer' }}">
+                <div class="d-flex align-items-center justify-content-between">
+                  <div class="q-title">Q{{ q.question_number }}</div>
+                  {% if q.status == 'Pass' %}
+                    <span class="badge bg-success">Pass</span>
+                  {% else %}
+                    <span class="badge bg-danger">Refer</span>
+                  {% endif %}
+                </div>
+                {% if q.comment %}
+                  <div class="q-comment mt-2 small">{{ q.comment }}</div>
+                {% endif %}
+              </div>
+            {% endfor %}
+          </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+
+<style>
+  .pdf-pane { border:1px solid #e9ecef; border-radius:12px; background:#fff; overflow:hidden; }
+  .pdf-embed { display:block; width:100%; height:78vh; }
+
+  .question-list { max-height:78vh; overflow:auto; padding-right:6px; }
+  .q-card {
+    border:1px solid #e9ecef; border-radius:12px; padding:12px 12px;
+    background:#fff; margin-bottom:10px;
+  }
+  .q-card.pass { border-color:#bfe4c7; background:#eaf7ee; }
+  .q-card.refer { border-color:#f5c2c7; background:#fff1f0; }
+  .q-title { font-weight:600; }
+  .q-comment { color:#333; }
+</style>
+{% endblock %}

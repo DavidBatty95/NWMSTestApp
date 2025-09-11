@@ -1,0 +1,131 @@
+{% extends 'base.html' %}
+{% block title %}Marker · Mark by Questions{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h2 class="mb-1">Workbook {{ wb_number }} · {{ student.username }}</h2>
+  <div class="d-flex gap-2">
+    <a href="{{ url_for('marker_view_student', student_id=student.id) }}" class="btn btn-light">
+      ← Back
+    </a>
+    <button type="submit" form="questionForm" class="btn btn-primary">
+      Save &amp; Finalize
+    </button>
+  </div>
+</div>
+
+<p class="text-muted mb-3">
+  {% if is_first_attempt %}
+    First attempt — all questions are open for marking.
+  {% else %}
+    Reattempt — only previously referred questions are open. Passed questions are locked.
+  {% endif %}
+</p>
+
+<div class="row g-3">
+  <!-- Left: PDF viewer -->
+  <div class="col-lg-7">
+    <div class="pdf-pane shadow-sm">
+      {% if pdf_filename %}
+        <embed src="{{ url_for('uploaded_file', filename=pdf_filename) }}"
+               type="application/pdf" class="pdf-embed">
+      {% else %}
+        <div class="p-4 text-center text-muted">
+          No PDF available for this submission.
+        </div>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- Right: Question feedback -->
+  <div class="col-lg-5">
+    <form method="post" id="questionForm" class="question-form">
+      <div class="d-flex align-items-center justify-content-between mb-2">
+        <h5 class="mb-0">Questions ({{ q_count }})</h5>
+        <div class="d-flex gap-2">
+          <button type="button" class="btn btn-sm btn-outline-secondary" id="setAllPass">Set all open to Pass</button>
+          <button type="button" class="btn btn-sm btn-outline-warning" id="setAllRefer">Set all open to Refer</button>
+        </div>
+      </div>
+
+      <div class="question-list">
+        {% for q in rows %}
+          <div class="q-card {{ 'locked' if not q.open }}">
+            <div class="d-flex align-items-center justify-content-between">
+              <div class="q-title">
+                Q{{ q.number }}
+                {% if not q.open %}
+                  <span class="badge bg-secondary ms-2">Passed (locked)</span>
+                {% endif %}
+              </div>
+              {% if q.open %}
+                <div class="btn-group btn-group-sm" role="group" aria-label="Pass/Refer">
+                  <input type="radio" class="btn-check" name="q_{{ q.number }}_status" id="q{{ q.number }}_pass" value="Pass" autocomplete="off">
+                  <label class="btn btn-outline-success" for="q{{ q.number }}_pass">Pass</label>
+                  <input type="radio" class="btn-check" name="q_{{ q.number }}_status" id="q{{ q.number }}_refer" value="Refer" autocomplete="off">
+                  <label class="btn btn-outline-danger" for="q{{ q.number }}_refer">Refer</label>
+                </div>
+              {% endif %}
+            </div>
+
+            <div class="mt-2">
+              <textarea class="form-control q-comment {{ 'readonly' if not q.open }}"
+                        name="q_{{ q.number }}_comment"
+                        placeholder="{{ 'Previously passed — no comment needed' if not q.open else 'Feedback (optional)'}}"
+                        {% if not q.open %}disabled{% endif %}></textarea>
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+    </form>
+  </div>
+</div>
+
+<style>
+  .pdf-pane { border:1px solid #e9ecef; border-radius:12px; background:#fff; overflow:hidden; }
+  .pdf-embed { display:block; width:100%; height:78vh; }
+  .question-form .question-list { max-height:78vh; overflow:auto; padding-right:6px; }
+  .q-card { border:1px solid #e9ecef; border-radius:12px; padding:12px 12px; background:#fff; margin-bottom:10px; }
+  .q-card.locked { background:#f6f7f8; opacity:.8; }
+  .q-title { font-weight:600; }
+  .q-comment { min-height:64px; transition: background-color .15s ease, border-color .15s ease; }
+  .q-comment.pass { background: #eaf7ee; border-color:#bfe4c7; }
+  .q-comment.refer { background: #fff1f0; border-color:#f5c2c7; }
+</style>
+
+<script>
+  (function(){
+    function updateColors(wrapper){
+      const pass = wrapper.querySelector('input[id$="_pass"]');
+      const refer = wrapper.querySelector('input[id$="_refer"]');
+      const textarea = wrapper.querySelector('.q-comment');
+      if (!textarea || textarea.disabled) return;
+      textarea.classList.remove('pass', 'refer');
+      if (pass && pass.checked) textarea.classList.add('pass');
+      if (refer && refer.checked) textarea.classList.add('refer');
+    }
+
+    document.querySelectorAll('.q-card').forEach(function(card){
+      card.addEventListener('change', function(e){
+        if (e.target.matches('input[type="radio"]')) updateColors(card);
+      });
+    });
+
+    document.getElementById('setAllPass')?.addEventListener('click', function(){
+      document.querySelectorAll('.q-card:not(.locked)').forEach(function(card){
+        const pass = card.querySelector('input[id$="_pass"]');
+        if (pass) { pass.checked = true; updateColors(card); }
+      });
+    });
+
+    document.getElementById('setAllRefer')?.addEventListener('click', function(){
+      document.querySelectorAll('.q-card:not(.locked)').forEach(function(card){
+        const refer = card.querySelector('input[id$="_refer"]');
+        if (refer) { refer.checked = true; updateColors(card); }
+      });
+    });
+
+    document.querySelectorAll('.q-card').forEach(updateColors);
+  })();
+</script>
+{% endblock %}
