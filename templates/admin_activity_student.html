@@ -1,0 +1,54 @@
+{% extends 'base.html' %}
+{% block title %}Admin · Activity · {{ student.username }}{% endblock %}
+
+{% block content %}
+<div class="d-flex flex-wrap align-items-center justify-content-between mb-3 gap-2">
+  <div>
+    <h2 class="mb-1">Activity: {{ student.username }}</h2>
+    <div class="text-muted">
+      ID: {{ student.id }} · Email: <a href="mailto:{{ student.email }}">{{ student.email }}</a>
+      · Course: <strong>{{ student.course or '—' }}</strong>
+    </div>
+  </div>
+  <div class="d-flex gap-2">
+    <a href="{{ url_for('admin_activity_download', student_id=student.id) }}"
+       class="btn btn-outline-secondary btn-sm" {{ '' if log_exists else 'disabled' }}>
+      Download Log
+    </a>
+    <form method="post" action="{{ url_for('admin_activity_clear', student_id=student.id) }}"
+          onsubmit="return confirm('Clear this student\\'s log? This cannot be undone.');">
+      <button type="submit" class="btn btn-outline-danger btn-sm" {{ '' if log_exists else 'disabled' }}>
+        Clear Log
+      </button>
+    </form>
+    <a href="{{ url_for('admin_activity') }}" class="btn btn-light btn-sm">← Back to Logs</a>
+  </div>
+</div>
+
+<div class="card shadow-sm">
+  <div class="card-body">
+    {% if events and events|length %}
+      <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0">
+          <thead class="table-light">
+            <tr>
+              <th style="min-width:220px;">Timestamp</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for e in events %}
+            <tr>
+              <td><span title="{{ e.ts }}">{{ e.formatted_ts }}</span></td>
+              <td class="fw-semibold">{{ e.action }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% else %}
+      <div class="text-muted text-center py-4">No log entries for this student.</div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

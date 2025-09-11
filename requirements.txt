@@ -6,6 +6,7 @@ gunicorn==23.0.0
 Flask-Login==0.6.3
 Flask-WTF==1.2.2
 email-validator==2.2.0
+itsdangerous==2.2.0
 
 # --- Database / ORM ---
 SQLAlchemy==2.0.36
@@ -21,9 +22,11 @@ alembic==1.13.3
 # --- Env vars ---
 python-dotenv==1.0.1
 
+# --- PDF merging / export ---
+PyPDF2==3.0.1
 
-# PDF merging for "Export Student Report"
-PyPDF2>=3.0
+# --- Time zones (needed for zoneinfo on some platforms like Render) ---
+tzdata==2025.1
 
 # --- Optional (uncomment if you use them) ---
 # requests==2.32.3

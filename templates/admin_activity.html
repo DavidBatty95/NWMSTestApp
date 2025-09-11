@@ -1,0 +1,66 @@
+{% extends 'base.html' %}
+{% block title %}Admin · Activity Logs{% endblock %}
+
+{% block content %}
+<div class="d-flex align-items-center justify-content-between mb-3">
+  <div>
+    <h2 class="mb-1">Student Activity Logs</h2>
+    <div class="text-muted small">Logins, uploads, re-uploads, and feedback views.</div>
+  </div>
+  <a href="{{ url_for('admin_dashboard') }}" class="btn btn-light btn-sm">← Back to Dashboard</a>
+</div>
+
+<div class="card shadow-sm">
+  <div class="card-body">
+    <div class="table-responsive">
+      <table class="table table-hover align-middle mb-0">
+        <thead class="table-light">
+          <tr>
+            <th style="min-width:220px;">Student</th>
+            <th>Course</th>
+            <th class="text-center">Entries</th>
+            <th>Last Event (UTC)</th>
+            <th class="text-end" style="min-width:220px;">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in rows %}
+          <tr>
+            <td class="fw-semibold">
+              <a class="text-decoration-none" href="{{ url_for('admin_activity_student', student_id=row.student.id) }}">
+                {{ row.student.username }}
+              </a>
+              <div class="small text-muted">
+                ID: {{ row.student.id }} · <a href="mailto:{{ row.student.email }}">{{ row.student.email }}</a>
+              </div>
+            </td>
+            <td>{{ row.student.course or '—' }}</td>
+            <td class="text-center">{{ row.entries }}</td>
+            <td>
+              {% if row.last_ts %}
+                <span title="{{ row.last_ts }}">{{ row.last_ts }}</span>
+              {% else %}
+                <span class="text-muted">—</span>
+              {% endif %}
+            </td>
+            <td class="text-end">
+              <a href="{{ url_for('admin_activity_student', student_id=row.student.id) }}" class="btn btn-sm btn-outline-primary">View</a>
+              {% if row.has_log %}
+                <a href="{{ url_for('admin_activity_download', student_id=row.student.id) }}" class="btn btn-sm btn-outline-secondary">Download</a>
+              {% else %}
+                <button class="btn btn-sm btn-outline-secondary" disabled>Download</button>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+          {% if rows|length == 0 %}
+          <tr>
+            <td colspan="5" class="text-center text-muted py-4">No students found.</td>
+          </tr>
+          {% endif %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}
