@@ -1,0 +1,95 @@
+{% extends 'base.html' %}
+{% block title %}Contact{% endblock %}
+
+{% block content %}
+<style>
+  .contact-card { border:1px solid #e9ecef; border-radius:12px; }
+  .contact-avatar {
+    width:46px; height:46px; border-radius:50%;
+    display:flex; align-items:center; justify-content:center;
+    font-weight:700;
+  }
+  .avatar-green { background:#e8f5e9; color:#2e7d32; }
+  .avatar-blue  { background:#e7f0ff; color:#224fbb; }
+  .avatar-gray  { background:#f1f3f5; color:#6c757d; }
+</style>
+
+<div class="d-flex align-items-center justify-content-between mb-3">
+  <div>
+    <h2 class="mb-0">Contact</h2>
+    <div class="text-muted small">Who to contact for help and support.</div>
+  </div>
+  <a href="{{ url_for('index') }}" class="btn btn-light btn-sm">← Home</a>
+</div>
+
+<div class="row g-3">
+  {% if show_marker_card %}
+  <!-- Student-only: Assigned Marker (Course Trainer) -->
+  <div class="col-12">
+    <div class="card contact-card shadow-sm">
+      <div class="card-body d-flex align-items-center justify-content-between">
+        <div class="d-flex align-items-center gap-3">
+          <div class="contact-avatar avatar-green">M</div>
+          <div>
+            <div class="fw-semibold">
+              Marker (Course Trainer): {{ marker_user.username }}
+            </div>
+            <div class="text-muted small">{{ marker_user.email }}</div>
+          </div>
+        </div>
+        <div>
+          <a class="btn btn-sm btn-success" href="mailto:{{ marker_user.email }}">Email Marker</a>
+        </div>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+  {% if show_core_contacts %}
+  <!-- Shared contacts (shown to students & markers; hidden for admin) -->
+  <div class="col-12 col-md-6">
+    <div class="card contact-card shadow-sm h-100">
+      <div class="card-body d-flex align-items-center justify-content-between">
+        <div class="d-flex align-items-center gap-3">
+          <div class="contact-avatar avatar-blue">J</div>
+          <div>
+            <div class="fw-semibold">
+              {{ contacts.director.name }} — {{ contacts.director.title }}
+            </div>
+            <div class="text-muted small">{{ contacts.director.email }}</div>
+          </div>
+        </div>
+        <div>
+          <a class="btn btn-sm btn-outline-primary" href="mailto:{{ contacts.director.email }}">Email</a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-12 col-md-6">
+    <div class="card contact-card shadow-sm h-100">
+      <div class="card-body d-flex align-items-center justify-content-between">
+        <div class="d-flex align-items-center gap-3">
+          <div class="contact-avatar avatar-gray">D</div>
+          <div>
+            <div class="fw-semibold">
+              {{ contacts.admin.name }} — {{ contacts.admin.title }}
+            </div>
+            <div class="text-muted small">{{ contacts.admin.email }}</div>
+          </div>
+        </div>
+        <div>
+          <a class="btn btn-sm btn-outline-secondary" href="mailto:{{ contacts.admin.email }}">Email</a>
+        </div>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+</div>
+
+{% if not show_marker_card and not show_core_contacts %}
+  <div class="alert alert-info mt-3 mb-0">
+    Contact details are not shown for admin users.
+  </div>
+{% endif %}
+{% endblock %}

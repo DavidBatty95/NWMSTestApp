@@ -4,9 +4,12 @@
   <meta charset="utf-8">
   <title>{% block title %}NWMS Workbook Portal{% endblock %}</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  <!-- Bootstrap 5 -->
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+
   <style>
+    /* ===== NWMS Brand ===== */
     :root{
       --nwms-black:#0B0B0C;
       --nwms-black-2:#121315;
@@ -18,50 +21,110 @@
       --shadow:0 8px 30px rgba(0,0,0,.35);
       --radius:12px;
       --sidebar-w:260px;
+      --content-max:1200px;
+      --link-hover:rgba(76,175,80,.12);
     }
+
     html,body{height:100%;}
     body{background:#f5f6f7;}
-    .layout{min-height:100vh; display:flex;
+
+    .layout{
+      min-height:100vh;
+      display:flex;
       background:
         radial-gradient(1200px 600px at -200px -100px, rgba(76,175,80,.08), transparent 60%),
-        radial-gradient(800px 500px at 120% 120%, rgba(46,125,50,.06), transparent 60%);}
-    .sidebar{width:var(--sidebar-w);
+        radial-gradient(800px 500px at 120% 120%, rgba(46,125,50,.06), transparent 60%);
+    }
+
+    /* ===== Sidebar ===== */
+    .sidebar{
+      width:var(--sidebar-w);
       background:linear-gradient(180deg, var(--nwms-black) 0%, var(--nwms-black-2) 100%);
-      color:var(--nwms-text); box-shadow:var(--shadow); position:sticky; top:0; align-self:flex-start;
-      height:100vh; padding:20px 18px; display:flex; flex-direction:column; border-right:1px solid var(--divider);}
-    .brand{background:#fff; border-radius:10px; padding:14px 12px; display:flex; align-items:center; justify-content:center;
-      box-shadow:0 6px 18px rgba(0,0,0,.15);}
+      color:var(--nwms-text);
+      box-shadow:var(--shadow);
+      position:sticky; top:0; align-self:flex-start;
+      height:100vh;
+      padding:20px 18px;
+      display:flex; flex-direction:column;
+      border-right:1px solid var(--divider);
+    }
+
+    .brand{
+      background:#fff;
+      border-radius:10px;
+      padding:14px 12px;
+      display:flex; align-items:center; justify-content:center;
+      box-shadow:0 6px 18px rgba(0,0,0,.15);
+    }
     .brand img{max-width:170px;height:auto;display:block;}
-    .portal-banner{margin:14px 0 8px 0; background:var(--nwms-green); color:#fff; font-weight:700; letter-spacing:.2px;
-      border-radius:10px; padding:8px 12px; text-align:center; box-shadow:0 4px 14px rgba(76,175,80,.35);}
-    .nav-title{font-size:.75rem; text-transform:uppercase; letter-spacing:.12rem; color:var(--nwms-muted);
-      padding:10px 10px 4px 10px; margin-top:6px;}
+
+    .portal-banner{
+      margin:14px 0 8px 0;
+      background:var(--nwms-green);
+      color:#fff; font-weight:700; letter-spacing:.2px;
+      border-radius:10px; padding:8px 12px; text-align:center;
+      box-shadow:0 4px 14px rgba(76,175,80,.35);
+      line-height:1.25;
+    }
+    .portal-sub{
+      font-size:.8rem; color:#eaf5eb; opacity:.95; font-weight:500;
+    }
+
+    .nav-title{
+      font-size:.75rem; text-transform:uppercase; letter-spacing:.12rem;
+      color:var(--nwms-muted);
+      padding:10px 10px 4px 10px;
+      margin-top:6px;
+    }
     .nav-list{list-style:none; padding:6px; margin:0; border-top:1px solid var(--divider);}
     .nav-item{position:relative; margin:4px 0;}
-    .nav-link{display:flex; align-items:center; gap:.6rem; color:var(--nwms-text); text-decoration:none;
-      padding:10px 12px; border-radius:10px; transition:all .18s ease; outline:none; position:relative;}
-    .nav-link .dot{width:8px; height:8px; border-radius:50%; background:transparent; border:2px solid var(--nwms-muted);
-      transition:border-color .18s ease, background .18s ease;}
-    .nav-link:hover{ background:rgba(76,175,80,.12); }
+
+    .nav-link{
+      display:flex; align-items:center; gap:.6rem;
+      color:var(--nwms-text); text-decoration:none;
+      padding:10px 12px;
+      border-radius:10px;
+      transition:all .18s ease;
+      outline:none; position:relative;
+    }
+    .nav-link .dot{
+      width:8px; height:8px; border-radius:50%;
+      background:transparent; border:2px solid var(--nwms-muted);
+      transition:border-color .18s ease, background .18s ease;
+    }
+    .nav-link:hover{ background:var(--link-hover); }
     .nav-link:hover .dot{ border-color:var(--nwms-green); }
-    .nav-link.active{ background:rgba(76,175,80,.18); box-shadow:inset 0 0 0 1px rgba(76,175,80,.22); }
-    .nav-link.active::before{ content:""; position:absolute; left:-6px; top:50%; transform:translateY(-50%);
-      width:4px; height:60%; border-radius:4px; background:linear-gradient(180deg,var(--nwms-green),var(--nwms-green-2));
-      box-shadow:0 0 0 2px rgba(76,175,80,.25); }
+
+    .nav-link.active{
+      background:rgba(76,175,80,.18);
+      box-shadow:inset 0 0 0 1px rgba(76,175,80,.22);
+    }
+    .nav-link.active::before{
+      content:"";
+      position:absolute; left:-6px; top:50%; transform:translateY(-50%);
+      width:4px; height:60%; border-radius:4px;
+      background:linear-gradient(180deg,var(--nwms-green),var(--nwms-green-2));
+      box-shadow:0 0 0 2px rgba(76,175,80,.25);
+    }
     .nav-link.active .dot{ background:var(--nwms-green); border-color:var(--nwms-green); }
+
     .nav-link:focus-visible{ box-shadow:0 0 0 3px rgba(76,175,80,.35); }
+
     .logout{margin-top:auto; padding-top:8px; border-top:1px solid var(--divider);}
     .logout .nav-link{color:#ffecec;}
     .logout .nav-link:hover{background:rgba(231,76,60,.18);}
+
+    /* ===== Content ===== */
     .content{flex:1; display:flex;}
-    .content-inner{flex:1; max-width:1200px; margin:0 auto; padding:28px 24px;}
+    .content-inner{flex:1; max-width:var(--content-max); margin:0 auto; padding:28px 24px;}
     .card.shadow-sm{border-radius:var(--radius); border:1px solid #e9ecef;}
-    /* Login page hides sidebar */
-    .no-sidebar .sidebar{display:none;}
-    .no-sidebar .content{margin:0 auto; width:100%;}
+
+    .flash-stack .alert{border-radius:10px;}
   </style>
+
+  {% block extra_head %}{% endblock %}
 </head>
-<body class="{{ 'no-sidebar' if not current_user.is_authenticated }}">
+<body>
 <div class="layout">
 
   {% if current_user.is_authenticated %}
@@ -72,15 +135,30 @@
 
     <div class="portal-banner">
       Workbook Portal: {{ current_user.role|capitalize }}
+      {% if current_user.role == 'student' %}
+        <div class="portal-sub">
+          {% if current_user.course %}Course: {{ current_user.course }}{% endif %}
+          {% if current_user.cohort and current_user.cohort.name %}
+            {% if current_user.course %} · {% endif %}
+            Cohort: {{ current_user.cohort.name }}
+          {% endif %}
+        </div>
+      {% endif %}
     </div>
 
     <div class="nav-block">
       <div class="nav-title">Navigation</div>
       <ul class="nav-list">
         {% if current_user.role == 'admin' %}
+          <!-- Admin order: Dashboard, Activity Logs, Assign Students, Cohorts/Classes, Delete Students, Delete Markers -->
           <li class="nav-item">
             <a class="nav-link {{ 'active' if request.endpoint == 'admin_dashboard' else '' }}" href="{{ url_for('admin_dashboard') }}">
               <span class="dot"></span> Dashboard
+            </a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link {{ 'active' if request.endpoint in ['admin_activity','admin_activity_student'] else '' }}" href="{{ url_for('admin_activity') }}">
+              <span class="dot"></span> Activity Logs
             </a>
           </li>
           <li class="nav-item">
@@ -89,8 +167,8 @@
             </a>
           </li>
           <li class="nav-item">
-            <a class="nav-link {{ 'active' if request.endpoint in ['admin_activity','admin_activity_student'] else '' }}" href="{{ url_for('admin_activity') }}">
-              <span class="dot"></span> Activity Logs
+            <a class="nav-link {{ 'active' if request.endpoint == 'admin_cohorts' else '' }}" href="{{ url_for('admin_cohorts') }}">
+              <span class="dot"></span> Cohorts / Classes
             </a>
           </li>
           <li class="nav-item">
@@ -103,21 +181,33 @@
               <span class="dot"></span> Delete Markers
             </a>
           </li>
+
         {% elif current_user.role == 'marker' %}
           <li class="nav-item">
-            <a class="nav-link {{ 'active' if request.endpoint in ['marker_dashboard','mark_workbook_questions'] else '' }}" href="{{ url_for('marker_dashboard') }}">
-              <span class="dot"></span> Marker Dashboard
+            <a class="nav-link {{ 'active' if request.endpoint in ['marker_dashboard'] else '' }}" href="{{ url_for('marker_dashboard') }}">
+              <span class="dot"></span> Dashboard
             </a>
           </li>
           <li class="nav-item">
-            <a class="nav-link {{ 'active' if request.endpoint in ['marker_students','marker_view_student'] else '' }}" href="{{ url_for('marker_students') }}">
+            <a class="nav-link {{ 'active' if request.endpoint in ['marker_students','marker_view_student','mark_workbook_questions'] else '' }}" href="{{ url_for('marker_students') }}">
               <span class="dot"></span> My Students
             </a>
           </li>
+          <li class="nav-item">
+            <a class="nav-link {{ 'active' if request.endpoint == 'contact' else '' }}" href="{{ url_for('contact') }}">
+              <span class="dot"></span> Contact
+            </a>
+          </li>
+
         {% elif current_user.role == 'student' %}
           <li class="nav-item">
             <a class="nav-link {{ 'active' if request.endpoint in ['student_dashboard','student_view_feedback'] else '' }}" href="{{ url_for('student_dashboard') }}">
-              <span class="dot"></span> My Workbooks
+              <span class="dot"></span> Dashboard
+            </a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link {{ 'active' if request.endpoint == 'contact' else '' }}" href="{{ url_for('contact') }}">
+              <span class="dot"></span> Contact
             </a>
           </li>
         {% endif %}
@@ -136,16 +226,21 @@
     <div class="content-inner">
       {% with messages = get_flashed_messages(with_categories=true) %}
         {% if messages %}
-          <div class="mb-3">
+          <div class="flash-stack mb-3">
             {% for category, message in messages %}
               <div class="alert alert-{{ category if category else 'info' }} mb-2" role="alert">{{ message }}</div>
             {% endfor %}
           </div>
         {% endif %}
       {% endwith %}
+
       {% block content %}{% endblock %}
     </div>
   </main>
 </div>
+
+<!-- Bootstrap JS -->
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+{% block extra_scripts %}{% endblock %}
 </body>
 </html>

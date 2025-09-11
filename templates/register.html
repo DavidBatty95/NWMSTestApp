@@ -1,52 +1,73 @@
-{% extends 'auth_base.html' %}
+{% extends 'base.html' %}
 {% block title %}Register{% endblock %}
 
 {% block content %}
-<div class="auth-card">
-  <img src="{{ url_for('static', filename='images/nwms_logo.png') }}" alt="NWMS Logo">
+<div class="row justify-content-center">
+  <div class="col-md-7 col-lg-6">
+    <div class="card shadow-sm">
+      <div class="card-body">
+        <h3 class="mb-3 text-center">Create your account</h3>
 
-  <h2>Create an Account</h2>
-  <form method="post">
-    <label for="username">Username</label>
-    <input type="text" name="username" required>
+        <form method="post" class="row g-3">
+          <div class="col-12">
+            <label class="form-label">Username</label>
+            <input type="text" name="username" class="form-control" required>
+          </div>
 
-    <label for="email">Email</label>
-    <input type="email" name="email" required>
+          <div class="col-12">
+            <label class="form-label">Email</label>
+            <input type="email" name="email" class="form-control" required>
+          </div>
 
-    <label for="password">Password</label>
-    <input type="password" name="password" required>
+          <div class="col-12">
+            <label class="form-label">Password</label>
+            <input type="password" name="password" class="form-control" required>
+          </div>
 
-    <label for="role">Role</label>
-    <select id="role" name="role" class="form-select" required onchange="toggleStudentFields()">
-      <option value="student">Student</option>
-      <option value="marker">Marker</option>
-      <option value="admin">Admin</option>
-    </select>
+          <div class="col-12">
+            <label class="form-label">Role</label>
+            <select name="role" id="roleSelect" class="form-select" required>
+              <option value="student" selected>Student</option>
+              <option value="marker">Marker</option>
+              <option value="admin">Admin</option>
+            </select>
+          </div>
 
-    <div id="student-fields" style="margin-top:1rem;">
-      <label for="course">Course</label>
-      <select name="course" class="form-select">
-        <option value="">-- None --</option>
-        <option value="FREC4">FREC4</option>
-        <option value="SALM">SALM</option>
-        <option value="CFR">CFR</option>
-      </select>
+          <!-- Student-only: Cohort passcode -->
+          <div class="col-12" id="cohortCodeWrap">
+            <label class="form-label">Cohort Passcode</label>
+            <input type="text" name="cohort_passcode" class="form-control" placeholder="e.g., 9X2F7K8HLM">
+            <div class="form-text">You’ll get this from your tutor or course admin.</div>
+          </div>
 
-      <label for="course_passcode">Course Passcode</label>
-      <input type="text" name="course_passcode" placeholder="Enter course code">
+          <div class="col-12 pt-2">
+            <button class="btn btn-success w-100">Create Account</button>
+          </div>
+
+          <div class="col-12 text-center">
+            <small class="text-muted">Already have an account?
+              <a href="{{ url_for('login') }}">Login</a></small>
+          </div>
+        </form>
+      </div>
     </div>
-
-    <button type="submit">Register</button>
-  </form>
-  <p>Already have an account? <a href="{{ url_for('login') }}">Login here</a>.</p>
+  </div>
 </div>
 
+{% block extra_scripts %}
 <script>
-function toggleStudentFields() {
-  const role = document.getElementById('role').value;
-  const fields = document.getElementById('student-fields');
-  fields.style.display = (role === 'student') ? 'block' : 'none';
-}
-document.addEventListener("DOMContentLoaded", toggleStudentFields);
+  // Hide cohort code when not a student
+  const roleSelect = document.getElementById('roleSelect');
+  const codeWrap = document.getElementById('cohortCodeWrap');
+  function toggleCode(){
+    if (roleSelect.value === 'student') {
+      codeWrap.style.display = '';
+    } else {
+      codeWrap.style.display = 'none';
+    }
+  }
+  toggleCode();
+  roleSelect.addEventListener('change', toggleCode);
 </script>
+{% endblock %}
 {% endblock %}

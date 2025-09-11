@@ -11,12 +11,13 @@ from werkzeug.utils import secure_filename
 from sqlalchemy import or_, text
 from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
 from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 from io import BytesIO
 from PyPDF2 import PdfMerger, PdfReader
-from zoneinfo import ZoneInfo
+from pathlib import Path
 import os
 import json
-from pathlib import Path
+import secrets
 
 # ===================================================
 # App & Config
@@ -37,50 +38,43 @@ login_manager.login_view = 'login'
 # Constants
 # ===================================================
 COURSE_WORKBOOKS = {'FREC4': 3, 'SALM': 1, 'CFR': 1}
-COURSE_PASSCODES = {'FREC4': 'nwmsfrec4', 'SALM': 'nwmssalm', 'CFR': 'nwmscfr'}
+COURSE_PASSCODES = {'FREC4': 'nwmsfrec4', 'SALM': 'nwmssalm', 'CFR': 'nwmscfr'}  # legacy fallback
 MARKING_DEADLINE_DAYS = 14
 MAX_ATTEMPTS = 4
 
-# Variable question counts per workbook (adjust as needed)
 QUESTION_COUNTS = {
-    ('FREC4', 1): 10,
-    ('FREC4', 2): 10,
-    ('FREC4', 3): 10,
-    ('CFR', 1): 10,
-    ('SALM', 1): 8,
-    ('*', 1): 10,
-    ('*', 2): 10,
-    ('*', 3): 10,
+    ('FREC4', 1): 10, ('FREC4', 2): 10, ('FREC4', 3): 10,
+    ('CFR', 1): 10, ('SALM', 1): 8,
+    ('*', 1): 10, ('*', 2): 10, ('*', 3): 10,
+}
+COURSE_DEADLINES = {
+    "FREC4": 6,   # months to deadline
+    "ILS": 3,
+    "SALM": 3,
+    "CFR": 3,
 }
 def get_question_count(course: str | None, workbook_number: int) -> int:
     return QUESTION_COUNTS.get((course or '*', workbook_number),
            QUESTION_COUNTS.get(('*', workbook_number), 10))
 
-# Display timezone for human-friendly timestamps on admin pages
 DISPLAY_TZ = ZoneInfo(os.environ.get('DISPLAY_TZ', 'Europe/London'))
-
 def _format_ts_human(ts_iso: str | None) -> str:
-    """Format an ISO8601 timestamp to a human-friendly string in DISPLAY_TZ."""
     if not ts_iso:
         return "—"
     try:
         dt = datetime.fromisoformat(ts_iso.replace("Z", "+00:00"))
-        dt_local = dt.astimezone(DISPLAY_TZ)
-        return dt_local.strftime("%a %d %b %Y, %H:%M %Z")
+        return dt.astimezone(DISPLAY_TZ).strftime("%a %d %b %Y, %H:%M %Z")
     except Exception:
-        return ts_iso  # fallback
+        return ts_iso
 
 # ===================================================
-# Activity logging (one JSONL file per student)
+# Activity logging (per-student JSONL)
 # ===================================================
 LOGS_DIR = Path(os.environ.get('ACTIVITY_LOGS_DIR', 'activity_logs'))
 LOGS_DIR.mkdir(parents=True, exist_ok=True)
-
 def student_log_path(student_id: int) -> Path:
     return LOGS_DIR / f"student_{student_id}.log"
-
 def log_student_event(student_id: int, event: str, details: dict | None = None):
-    """Append a JSON line to the student's log file (best-effort)."""
     try:
         payload = {
             "ts": datetime.now(timezone.utc).isoformat(),
@@ -91,8 +85,7 @@ def log_student_event(student_id: int, event: str, details: dict | None = None):
         }
         if details:
             payload["details"] = details
-        p = student_log_path(student_id)
-        with p.open("a", encoding="utf-8") as f:
+        with student_log_path(student_id).open("a", encoding="utf-8") as f:
             f.write(json.dumps(payload, ensure_ascii=False) + "\n")
     except Exception:
         pass
@@ -100,41 +93,148 @@ def log_student_event(student_id: int, event: str, details: dict | None = None):
 # ===================================================
 # Time / Token Helpers
 # ===================================================
-def now_utc():
-    return datetime.now(timezone.utc)
-
-def now_utc_naive():
-    return now_utc().replace(tzinfo=None)
-
-def _get_serializer():
-    return URLSafeTimedSerializer(app.config['SECRET_KEY'])
-
+def now_utc(): return datetime.now(timezone.utc)
+def now_utc_naive(): return now_utc().replace(tzinfo=None)
+def _get_serializer(): return URLSafeTimedSerializer(app.config['SECRET_KEY'])
 def generate_reset_token(user):
-    s = _get_serializer()
-    return s.dumps({'uid': user.id, 'email': user.email}, salt='pw-reset')
-
+    return _get_serializer().dumps({'uid': user.id, 'email': user.email}, salt='pw-reset')
 def verify_reset_token(token, max_age=3600):
     s = _get_serializer()
     try:
         data = s.loads(token, salt='pw-reset', max_age=max_age)
-        uid = data.get('uid'); email = data.get('email')
-        if not uid or not email:
-            return None
-        user = db.session.get(User, uid)
-        return user if user and user.email == email else None
+        user = db.session.get(User, data.get('uid'))
+        return user if user and user.email == data.get('email') else None
     except (SignatureExpired, BadSignature):
         return None
 
 # ===================================================
+# Countdown Status
+# ===================================================
+def add_months(dt, months):
+    """Add calendar months to a date, clamping the day where needed (no python-dateutil required)."""
+    if not dt:
+        return None
+    year = dt.year + (dt.month - 1 + months) // 12
+    month = (dt.month - 1 + months) % 12 + 1
+    # clamp day to month length
+    from calendar import monthrange
+    day = min(dt.day, monthrange(year, month)[1])
+    return dt.replace(year=year, month=month, day=day)
+
+def build_workbook_item(student_id, wb_number):
+    """Return per-workbook dict for template."""
+    latest = (WorkbookSubmission.query
+              .filter_by(student_id=student_id, workbook_number=wb_number)
+              .order_by(WorkbookSubmission.submission_time.desc())
+              .first())
+
+    # Defaults
+    item = {
+        "wb_number": wb_number,
+        "latest": latest,
+        "attempts_so_far": 0,
+        "attempts_left": MAX_ATTEMPTS,
+        "label": "Awaiting submission",
+        "badge": "bg-secondary",
+        "can_upload": True,
+        "can_reattempt": False,
+    }
+
+    if not latest:
+        return item
+
+    # Attempts are tracked by referral_count (increments when marker selects "Refer")
+    # Attempts so far = referral_count + 1 (the current attempt)
+    attempts_so_far = (latest.referral_count or 0) + 1
+    attempts_left = max(0, MAX_ATTEMPTS - attempts_so_far)
+    item["attempts_so_far"] = attempts_so_far
+    item["attempts_left"] = attempts_left
+    item["can_upload"] = False
+
+    if not latest.marked:
+        # Submitted but not yet marked
+        item["label"] = "Submitted"
+        item["badge"] = "bg-warning text-dark"
+        item["can_reattempt"] = False
+        return item
+
+    # Marked:
+    if latest.score == 100 and not latest.is_referral:
+        item["label"] = "Marked Pass"
+        item["badge"] = "bg-success"
+        item["can_reattempt"] = False
+        return item
+
+    # Referred case (most typical for non-pass prior to final attempt)
+    if latest.is_referral:
+        if attempts_left > 0:
+            item["label"] = "Waiting for reattempt"
+            item["badge"] = "bg-danger"
+            item["can_reattempt"] = True
+        else:
+            item["label"] = "Failed"
+            item["badge"] = "bg-dark text-white"
+            item["can_reattempt"] = False
+        return item
+
+    # Explicit Fail (used on final attempt)
+    if latest.score == 0:
+        if attempts_left == 0:
+            item["label"] = "Failed"
+            item["badge"] = "bg-dark text-white"
+            item["can_reattempt"] = False
+        else:
+            # If a Fail was recorded earlier than final (shouldn't normally happen),
+            # treat as needs reattempt while there are attempts available.
+            item["label"] = "Waiting for reattempt"
+            item["badge"] = "bg-danger"
+            item["can_reattempt"] = True
+        return item
+
+    # Fallback (shouldn't hit)
+    return item
+
+def compute_overall_status(items, required):
+    """Overall student status: Pass if all passed; Fail if all failed; else In Progress."""
+    passes = 0
+    fails = 0
+    for it in items:
+        label = it["label"]
+        if label == "Marked Pass":
+            passes += 1
+        elif label == "Failed":
+            fails += 1
+    if passes == required:
+        return "Pass"
+    if fails == required:
+        return "Fail"
+    return "In Progress"
+
+# ===================================================
 # Models
 # ===================================================
+class Cohort(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(120), nullable=True)
+    course = db.Column(db.String(10), nullable=False)              # 'FREC4'|'SALM'|'CFR'
+    marker_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    start_date = db.Column(db.Date, nullable=False)
+    passcode = db.Column(db.String(24), nullable=False, unique=True)
+    active = db.Column(db.Boolean, default=True)
+    created_at = db.Column(db.DateTime, default=now_utc_naive)
+
+    marker = db.relationship('User', foreign_keys=[marker_id])
+
 class User(UserMixin, db.Model):
     id       = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(150), nullable=False, unique=True)
     email    = db.Column(db.String(150), nullable=False, unique=True)
     password = db.Column(db.String(150), nullable=False)
-    role     = db.Column(db.String(50),  nullable=False)   # 'student', 'marker', 'admin'
-    course   = db.Column(db.String(10),  nullable=True)    # only for students
+    role     = db.Column(db.String(50),  nullable=False)           # 'student','marker','admin'
+    course   = db.Column(db.String(10),  nullable=True)            # for students
+    cohort_id = db.Column(db.Integer, db.ForeignKey('cohort.id'), nullable=True)
+
+    cohort = db.relationship('Cohort', foreign_keys=[cohort_id])
 
 class WorkbookSubmission(db.Model):
     id          = db.Column(db.Integer, primary_key=True)
@@ -148,7 +248,7 @@ class WorkbookSubmission(db.Model):
     is_referral = db.Column(db.Boolean, default=False)
     referral_count = db.Column(db.Integer, default=0)
     corrected_submission_path = db.Column(db.String(255), nullable=True)
-    corrected_submission_time = db.Column(db.DateTime, nullable=True)  # re-upload timestamp
+    corrected_submission_time = db.Column(db.DateTime, nullable=True)
 
     student = db.relationship('User', foreign_keys=[student_id])
 
@@ -167,19 +267,31 @@ class Assignment(db.Model):
     marker_id  = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
 
 # ===================================================
-# SQLite dev helper: ensure new columns exist
+# SQLite schema helper (adds new columns on existing DB)
 # ===================================================
+from sqlalchemy.exc import OperationalError
 def ensure_sqlite_schema():
     if not db.engine.url.get_backend_name().startswith('sqlite'):
         return
     with db.engine.connect() as conn:
-        cols = [row['name'] for row in conn.execute(text("PRAGMA table_info(workbook_submission)")).mappings()]
-        if 'corrected_submission_time' not in cols:
-            conn.execute(text("ALTER TABLE workbook_submission ADD COLUMN corrected_submission_time DATETIME"))
+        # workbook_submission.corrected_submission_time
+        try:
+            cols_ws = [row['name'] for row in conn.execute(text("PRAGMA table_info(workbook_submission)")).mappings()]
+            if 'corrected_submission_time' not in cols_ws:
+                conn.execute(text("ALTER TABLE workbook_submission ADD COLUMN corrected_submission_time DATETIME"))
+        except OperationalError:
+            pass
+        # user.cohort_id
+        try:
+            cols_user = [row['name'] for row in conn.execute(text("PRAGMA table_info(user)")).mappings()]
+            if 'cohort_id' not in cols_user:
+                conn.execute(text("ALTER TABLE user ADD COLUMN cohort_id INTEGER"))
+        except OperationalError:
+            pass
         conn.commit()
 
 # ===================================================
-# Login loader
+# Load user
 # ===================================================
 @login_manager.user_loader
 def load_user(user_id):
@@ -192,12 +304,25 @@ def load_user(user_id):
 # Helpers
 # ===================================================
 def get_student_status(student: User, required_workbooks: int) -> str:
-    """
-    Overall status:
-      - Pass: all required workbooks are pass (score equals total questions)
-      - Fail: all required workbooks are fail (explicit 0 with no referral open)
-      - In Progress: otherwise
-    """
+    # NEW RULE: If any workbook has 0 attempts left and did not pass => overall Fail
+    for wb in range(1, required_workbooks + 1):
+        latest = (WorkbookSubmission.query
+                  .filter_by(student_id=student.id, workbook_number=wb)
+                  .order_by(WorkbookSubmission.submission_time.desc())
+                  .first())
+        if not latest:
+            continue
+        attempts_so_far = 1 + (latest.referral_count or 0)
+        attempts_left = max(0, MAX_ATTEMPTS - attempts_so_far)
+        q_total = get_question_count(student.course, wb)
+
+        # If no attempts left AND latest is marked AND not a full pass => immediate Fail
+        if attempts_left == 0 and latest.marked:
+            is_full_pass = (latest.score is not None and latest.score == q_total and not latest.is_referral)
+            if not is_full_pass:
+                return 'Fail'
+
+    # Otherwise fall back to the original aggregate logic
     states = []
     for wb in range(1, required_workbooks + 1):
         latest = (WorkbookSubmission.query
@@ -206,14 +331,15 @@ def get_student_status(student: User, required_workbooks: int) -> str:
                   .first())
         if not latest:
             states.append('pending'); continue
-        # treat re-upload as awaiting marking
         if latest.corrected_submission_path and not latest.marked:
             states.append('submitted'); continue
         if not latest.marked:
             states.append('submitted'); continue
+
+        q_total = get_question_count(student.course, wb)
         if latest.is_referral:
             states.append('referral')
-        elif latest.score is not None and latest.score == get_question_count(student.course, wb):
+        elif latest.score is not None and latest.score == q_total:
             states.append('pass')
         elif latest.score == 0:
             states.append('fail')
@@ -254,9 +380,7 @@ def _file_is_referenced_elsewhere(filename: str, exclude_submission_id=None) -> 
     return db.session.query(q.exists()).scalar()
 
 def _maybe_delete_uploaded_file(filename: str):
-    if not filename:
-        return
-    if _file_is_referenced_elsewhere(filename):
+    if not filename or _file_is_referenced_elsewhere(filename):
         return
     path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
     try:
@@ -264,6 +388,10 @@ def _maybe_delete_uploaded_file(filename: str):
             os.remove(path)
     except Exception:
         pass
+
+def generate_passcode(length: int = 10) -> str:
+    alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+    return ''.join(secrets.choice(alphabet) for _ in range(length))
 
 # ===================================================
 # Routes: Auth
@@ -279,8 +407,6 @@ def register():
         email = (request.form.get('email') or '').strip()
         password_raw = request.form.get('password') or ''
         role = (request.form.get('role') or '').strip()
-        course = request.form.get('course') if role == 'student' else None
-        course_passcode = request.form.get('course_passcode') if role == 'student' else None
 
         if not username or not email or not password_raw or role not in ('student', 'marker', 'admin'):
             flash('Please provide all required fields.', 'warning')
@@ -290,18 +416,58 @@ def register():
             flash('Username already exists', 'warning')
             return redirect(url_for('register'))
 
+        # STUDENT: cohort passcode is required (no course dropdown anymore)
         if role == 'student':
-            if not course or not course_passcode:
-                flash('Course and passcode required for student registration.', 'danger')
-                return redirect(url_for('register'))
-            expected = COURSE_PASSCODES.get(course)
-            if not expected or course_passcode.strip().lower() != expected.lower():
-                flash('Invalid course passcode for selected course.', 'danger')
+            raw_code = (request.form.get('cohort_passcode') or '').strip()
+            # normalize (remove internal spaces + uppercase) to be forgiving
+            norm_code = ''.join(raw_code.split()).upper()
+            if not norm_code:
+                flash('Please enter your cohort passcode.', 'danger')
                 return redirect(url_for('register'))
 
-        password = generate_password_hash(password_raw)
-        new_user = User(username=username, email=email, password=password, role=role, course=course)
-        db.session.add(new_user)
+            # fetch cohorts and compare normalized (uppercase, no spaces)
+            # NOTE: Cohort.passcode is stored uppercase by our generator.
+            cohort = None
+            for ch in Cohort.query.filter_by(active=True).all():
+                if (ch.passcode or '').upper() == norm_code:
+                    cohort = ch
+                    break
+
+            if not cohort:
+                flash('Cohort passcode not recognized or inactive.', 'danger')
+                return redirect(url_for('register'))
+
+            # Create the student with cohort+course from cohort, and auto-assign marker
+            user = User(
+                username=username,
+                email=email,
+                password=generate_password_hash(password_raw),
+                role='student',
+                course=cohort.course,
+                cohort_id=cohort.id
+            )
+            db.session.add(user)
+            db.session.commit()
+
+            # Auto-assign to cohort's marker
+            existing = Assignment.query.filter_by(student_id=user.id).first()
+            if existing:
+                existing.marker_id = cohort.marker_id
+            else:
+                db.session.add(Assignment(student_id=user.id, marker_id=cohort.marker_id))
+            db.session.commit()
+
+            flash('Account created and cohort assigned. Please log in.', 'success')
+            return redirect(url_for('login'))
+
+        # MARKER or ADMIN
+        user = User(
+            username=username,
+            email=email,
+            password=generate_password_hash(password_raw),
+            role=role
+        )
+        db.session.add(user)
         db.session.commit()
         flash('Account created. Please log in.', 'success')
         return redirect(url_for('login'))
@@ -379,122 +545,92 @@ def student_dashboard():
 
     # Handle uploads
     if request.method == 'POST':
-        wb_number = int(request.form['workbook_number'])
+        wb_number = int(request.form.get('workbook_number', '0') or 0)
+        if wb_number <= 0:
+            flash('Invalid workbook number.', 'warning')
+            return redirect(url_for('student_dashboard'))
 
         # First submission
-        file = request.files.get('file')
-        if file and file.filename:
-            filename = secure_filename(file.filename)
-            file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
+        up_file = request.files.get('file')
+        # Reattempt upload (after referral)
+        ref_file = request.files.get('referral_file')
 
-            latest_prev = (WorkbookSubmission.query
-                           .filter_by(student_id=current_user.id, workbook_number=wb_number)
-                           .order_by(WorkbookSubmission.submission_time.desc())
-                           .first())
-            referral_count = latest_prev.referral_count if latest_prev else 0
-
-            sub = WorkbookSubmission(
+        if up_file and up_file.filename:
+            filename = secure_filename(up_file.filename)
+            path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+            up_file.save(path)
+            # Derive referral_count from the latest (keep continuity)
+            latest_existing = (WorkbookSubmission.query
+                               .filter_by(student_id=current_user.id, workbook_number=wb_number)
+                               .order_by(WorkbookSubmission.submission_time.desc())
+                               .first())
+            referral_count = (latest_existing.referral_count if latest_existing else 0) or 0
+            # Create a new submission row
+            submission = WorkbookSubmission(
                 student_id=current_user.id,
                 workbook_number=wb_number,
                 file_path=filename,
-                referral_count=referral_count
+                referral_count=referral_count,
+                marked=False,
+                is_referral=False
             )
-            db.session.add(sub)
+            db.session.add(submission)
             db.session.commit()
-
-            log_student_event(current_user.id, "upload", {
-                "workbook_number": wb_number,
-                "filename": filename
-            })
+            flash(f'Workbook {wb_number} uploaded.', 'success')
             return redirect(url_for('student_dashboard'))
 
-        # Reattempt upload after referral (attach to same submission)
-        referral_file = request.files.get('referral_file')
-        if referral_file and referral_file.filename:
-            filename = secure_filename(referral_file.filename)
-            referral_file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
+        elif ref_file and ref_file.filename:
+            # Attach the corrected file to the latest submission record
+            filename = secure_filename(ref_file.filename)
+            path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+            ref_file.save(path)
 
             latest = (WorkbookSubmission.query
                       .filter_by(student_id=current_user.id, workbook_number=wb_number)
                       .order_by(WorkbookSubmission.submission_time.desc())
                       .first())
-            if latest:
-                latest.corrected_submission_path = filename
-                latest.corrected_submission_time = now_utc_naive()
-                # Make sure it shows as needing marking again:
-                latest.marked = False
-                latest.score = None
-                latest.feedback = None
-                # Keep referral flag until re-marked
-                db.session.commit()
+            if not latest:
+                flash('No prior submission found for this workbook.', 'warning')
+                return redirect(url_for('student_dashboard'))
 
-                log_student_event(current_user.id, "reupload", {
-                    "workbook_number": wb_number,
-                    "filename": filename
-                })
+            latest.corrected_submission_path = filename
+            # keep the submission unmarked; marker will review this corrected file
+            db.session.commit()
+            flash(f'Workbook {wb_number} re-uploaded for referral.', 'success')
             return redirect(url_for('student_dashboard'))
 
-    # Build table rows
-    required = COURSE_WORKBOOKS.get(current_user.course, 1)
+        else:
+            flash('Please choose a PDF to upload.', 'warning')
+            return redirect(url_for('student_dashboard'))
+
+    # --- Build dashboard view data ---
+    course_code = (current_user.course or '').upper()
+    required = COURSE_WORKBOOKS.get(course_code, 3)
+
+    # Cohort start date (if you have a Cohort model wired to the user)
+    start_date = None
+    if hasattr(current_user, "cohort") and current_user.cohort and current_user.cohort.start_date:
+        start_date = current_user.cohort.start_date
+
+    # Compute deadline by course
+    months_allowed = COURSE_DEADLINES.get(course_code, 6)
+    deadline_date = add_months(start_date, months_allowed) if start_date else None
+
+    # Per-workbook rows
     items = []
-    for wb in range(1, required + 1):
-        latest = (WorkbookSubmission.query
-                  .filter_by(student_id=current_user.id, workbook_number=wb)
-                  .order_by(WorkbookSubmission.submission_time.desc())
-                  .first())
+    for n in range(1, required + 1):
+        items.append(build_workbook_item(current_user.id, n))
 
-        # Attempts: 1 for original + referral_count reattempts already used
-        attempts_so_far = 1 + (latest.referral_count or 0) if latest else 0
-        attempts_left = max(0, MAX_ATTEMPTS - attempts_so_far)
+    overall_status = compute_overall_status(items, required)
 
-        label = 'Awaiting submission'
-        badge = 'bg-secondary'
-        can_upload = True
-        can_reattempt = False
-
-        if latest:
-            can_upload = False
-            if not latest.marked:
-                if latest.is_referral:
-                    label = 'Referral'
-                    badge = 'bg-danger'
-                else:
-                    label = 'Submitted'
-                    badge = 'bg-warning text-dark'
-            else:
-                if latest.is_referral:
-                    label = 'Referral'
-                    badge = 'bg-danger'
-                    can_reattempt = attempts_left > 0
-                elif latest.score == get_question_count(current_user.course, wb):
-                    label = 'Marked Pass'
-                    badge = 'bg-success'
-                elif latest.score == 0:
-                    label = 'Marked Fail'
-                    badge = 'bg-dark'
-                else:
-                    label = 'Marked'
-                    badge = 'bg-info text-dark'
-
-        items.append({
-            'wb_number': wb,
-            'label': label,
-            'badge': badge,
-            'latest': latest,
-            'can_upload': can_upload,
-            'can_reattempt': can_reattempt,
-            'attempts_left': attempts_left,
-            'attempts_so_far': attempts_so_far,
-        })
-
-    overall_status = get_student_status(current_user, required)
-
-    return render_template('student_dashboard.html',
-                           items=items,
-                           required=required,
-                           overall_status=overall_status,
-                           now=now_utc_naive(),
-                           timedelta=timedelta)
+    return render_template(
+        'student_dashboard.html',
+        items=items,
+        overall_status=overall_status,
+        course_start_date=start_date,
+        course_deadline=deadline_date,
+        months_allowed=months_allowed
+    )
 
 @app.route('/student_feedback/<int:workbook_number>')
 @login_required
@@ -506,22 +642,18 @@ def student_view_feedback(workbook_number):
                   .filter_by(student_id=current_user.id, workbook_number=workbook_number, marked=True)
                   .order_by(WorkbookSubmission.submission_time.desc())
                   .first())
-
     if not submission:
         flash('No marked feedback is available for this workbook yet.', 'info')
         return redirect(url_for('student_dashboard'))
 
-    # log view
     log_student_event(current_user.id, "view_feedback", {"workbook_number": workbook_number})
 
     q_items = (QuestionFeedback.query
                .filter_by(submission_id=submission.id)
-               .order_by(QuestionFeedback.question_number.asc())
-               .all())
+               .order_by(QuestionFeedback.question_number.asc()).all())
 
     pdf_filename = submission.corrected_submission_path or submission.file_path
     is_pdf = bool(pdf_filename and pdf_filename.lower().endswith('.pdf'))
-
     total = len(q_items)
     passed = sum(1 for f in q_items if f.status == 'Pass')
 
@@ -534,15 +666,10 @@ def student_view_feedback(workbook_number):
     else:
         overall = 'Marked'
 
-    return render_template(
-        'student_view_feedback.html',
-        workbook_number=workbook_number,
-        submission=submission,
-        overall=overall,
-        pdf_filename=pdf_filename if is_pdf else None,
-        q_items=q_items,
-        total=total, passed=passed
-    )
+    return render_template('student_view_feedback.html',
+                           workbook_number=workbook_number, submission=submission,
+                           overall=overall, pdf_filename=pdf_filename if is_pdf else None,
+                           q_items=q_items, total=total, passed=passed)
 
 @app.route('/uploads/<path:filename>')
 @login_required
@@ -558,40 +685,77 @@ def marker_dashboard():
     if current_user.role != 'marker':
         return redirect(url_for('login'))
 
-    now = now_utc_naive()
-    students = get_assigned_students_for_marker(current_user.id)
+    # Only students assigned to this marker
+    assigned_student_ids = [a.student_id for a in Assignment.query.filter_by(marker_id=current_user.id).all()]
+    students = User.query.filter(User.role == 'student', User.id.in_(assigned_student_ids)).order_by(User.username.asc()).all()
 
-    status_counts = {"Unsubmitted": 0, "To be Marked": 0, "Marked": 0}
-    pending = []
+    # Donut counters (per-student workload; each student contributes their course's required count)
+    total_unsubmitted = 0
+    total_to_mark = 0
+    total_marked = 0
 
-    for student in students:
-        subs = (WorkbookSubmission.query
-                .filter_by(student_id=student.id)
-                .order_by(WorkbookSubmission.submission_time.desc())
-                .all())
-        if not subs:
-            status_counts["Unsubmitted"] += 1
-        else:
-            any_unmarked = any(not s.marked for s in subs)
-            status_counts["To be Marked" if any_unmarked else "Marked"] += 1
+    # Per-student summary (optional for list below donut)
+    overview_rows = []
 
-        for s in subs:
-            latest_time = s.corrected_submission_time or s.submission_time
-            if not s.marked:
-                deadline = s.submission_time + timedelta(days=MARKING_DEADLINE_DAYS)
-                time_left = deadline - now
-                pending.append({
-                    "student": student,
-                    "submission": s,
-                    "deadline": deadline,
-                    "time_left": time_left,
-                    "latest_time": latest_time,
-                })
+    for s in students:
+        required = COURSE_WORKBOOKS.get((s.course or '').upper(), 3)
+        s_unsubmitted = required
+        s_to_mark = 0
+        s_marked = 0
 
-    pending.sort(key=lambda x: x["time_left"])
-    return render_template('marker_dashboard.html', students=students,
-                           status_counts=status_counts, pending=pending,
-                           now=now, timedelta=timedelta, COURSE_WORKBOOKS=COURSE_WORKBOOKS)
+        # For each workbook slot 1..required, look at the *latest* submission for that slot
+        for wb in range(1, required + 1):
+            latest = (WorkbookSubmission.query
+                      .filter_by(student_id=s.id, workbook_number=wb)
+                      .order_by(WorkbookSubmission.submission_time.desc())
+                      .first())
+            if not latest:
+                # No submission yet → stays counted as Unsubmitted
+                continue
+
+            # A submission exists → it no longer counts as Unsubmitted
+            s_unsubmitted -= 1
+
+            if latest.marked:
+                # Marked (Pass/Fail/Referral) counts as Marked for volume (the marker already handled it)
+                s_marked += 1
+            else:
+                # Awaiting marking (initial or reupload) → workload
+                s_to_mark += 1
+
+        total_unsubmitted += s_unsubmitted
+        total_to_mark += s_to_mark
+        total_marked += s_marked
+
+        overview_rows.append({
+            "student": s,
+            "required": required,
+            "unsubmitted": s_unsubmitted,
+            "to_mark": s_to_mark,
+            "marked": s_marked,
+        })
+
+    donut_data = {
+        "unsubmitted": total_unsubmitted,
+        "to_mark": total_to_mark,
+        "marked": total_marked,
+        "total": total_unsubmitted + total_to_mark + total_marked
+    }
+
+    # Recent submissions list (unchanged, optional)
+    recent_submissions = (WorkbookSubmission.query
+                          .order_by(WorkbookSubmission.submission_time.desc())
+                          .limit(10)
+                          .all())
+    users = {u.id: u for u in User.query.filter(User.id.in_(assigned_student_ids)).all()}
+
+    return render_template(
+        'marker_dashboard.html',
+        donut_data=donut_data,
+        students_overview=overview_rows,
+        recent_submissions=recent_submissions,
+        users=users
+    )
 
 @app.route('/marker_students')
 @login_required
@@ -602,8 +766,7 @@ def marker_students():
     data = []
     for s in students:
         required = COURSE_WORKBOOKS.get(s.course, 1)
-        status = get_student_status(s, required)
-        data.append({"student": s, "status": status, "required": required})
+        data.append({"student": s, "status": get_student_status(s, required), "required": required})
     return render_template('marker_students.html', students=data)
 
 @app.route('/marker_view_student/<int:student_id>')
@@ -615,16 +778,14 @@ def marker_view_student(student_id):
         abort(403)
 
     student = db.session.get(User, student_id)
-    if not student:
-        abort(404)
+    if not student: abort(404)
 
     workbooks = WorkbookSubmission.query.filter_by(student_id=student.id).all()
     required = COURSE_WORKBOOKS.get(student.course, 1)
     workbooks_dict = {w.workbook_number: w for w in workbooks}
 
     assigned_students = get_assigned_students_for_marker(current_user.id)
-    students_sorted = sorted(assigned_students, key=lambda s: s.id)
-    ids = [s.id for s in students_sorted]
+    ids = [s.id for s in sorted(assigned_students, key=lambda s: s.id)]
     idx = ids.index(student.id)
     prev_id = ids[idx - 1] if idx > 0 else None
     next_id = ids[idx + 1] if idx < len(ids) - 1 else None
@@ -635,134 +796,110 @@ def marker_view_student(student_id):
                            timedelta=timedelta, prev_id=prev_id, next_id=next_id,
                            get_marking_deadline=get_marking_deadline)
 
-# ---------- Question-by-question marking ----------
 @app.route('/mark_workbook_questions/<int:submission_id>', methods=['GET', 'POST'])
 @login_required
 def mark_workbook_questions(submission_id):
-    # Access control
     if current_user.role != 'marker':
         return redirect(url_for('login'))
 
     submission = db.session.get(WorkbookSubmission, submission_id)
-    if not submission:
-        abort(404)
+    if not submission: abort(404)
     if not marker_is_assigned_to_student(current_user.id, submission.student_id):
         abort(403)
 
     student = db.session.get(User, submission.student_id)
-    if not student:
-        abort(404)
+    if not student: abort(404)
 
-    wb_num  = submission.workbook_number
-    course  = student.course
-    q_count = get_question_count(course, wb_num)
+    wb_num = submission.workbook_number
+    q_count = get_question_count(student.course, wb_num)
 
-    # Determine attempt context (same-submission or prior row)
-    existing_fb = QuestionFeedback.query.filter_by(submission_id=submission.id).all()
-    has_same_submission_prior = bool(existing_fb)
+    # Determine attempt info
+    attempts_so_far = 1 + (submission.referral_count or 0)
+    attempts_left = max(0, MAX_ATTEMPTS - attempts_so_far)
+    final_attempt = (attempts_left == 0)
 
-    previous_submissions = (
-        WorkbookSubmission.query
-        .filter_by(student_id=student.id, workbook_number=wb_num)
-        .filter(WorkbookSubmission.id != submission.id)
-        .order_by(WorkbookSubmission.submission_time.desc())
-        .all()
-    )
+    # Figure out which questions should be open:
+    #  - First attempt: all questions open
+    #  - Later attempts: only previously referred questions open; previously passed are locked/greyed
+    previous_submissions = (WorkbookSubmission.query
+                            .filter_by(student_id=student.id, workbook_number=wb_num)
+                            .filter(WorkbookSubmission.id != submission.id)
+                            .order_by(WorkbookSubmission.submission_time.desc())
+                            .all())
 
+    # Gather previously referred/pass info from immediately previous marked submission (if any)
     previously_referred = set()
-    prev_pass_comments  = {}
-
-    if has_same_submission_prior and submission.is_referral:
-        for q in existing_fb:
+    prev_pass_comments = {}
+    last_prev = previous_submissions[0] if previous_submissions else None
+    if last_prev:
+        for q in QuestionFeedback.query.filter_by(submission_id=last_prev.id).all():
             if q.status == 'Refer':
                 previously_referred.add(q.question_number)
             elif q.status == 'Pass':
                 prev_pass_comments[q.question_number] = (q.comment or '')
-        is_first_attempt = False
-    elif previous_submissions:
-        last_prev = previous_submissions[0]
-        prev_q_feedback = QuestionFeedback.query.filter_by(submission_id=last_prev.id).all()
-        for q in prev_q_feedback:
-            if q.status == 'Refer':
-                previously_referred.add(q.question_number)
-            elif q.status == 'Pass':
-                prev_pass_comments[q.question_number] = (q.comment or '')
-        is_first_attempt = False
-    else:
-        is_first_attempt = True
 
+    is_first_attempt = (attempts_so_far == 1 and not previous_submissions)
     open_questions = list(range(1, q_count + 1)) if is_first_attempt else sorted(previously_referred)
 
-    # POST: save per-question feedback
     if request.method == 'POST':
-        prev_pass_locked = set()
-        if not is_first_attempt and has_same_submission_prior:
-            for q in existing_fb:
-                if q.status == 'Pass' and q.question_number not in previously_referred:
-                    prev_pass_locked.add(q.question_number)
-
-        # Clear old feedback for this submission
+        # Clear existing feedback for this submission and re-save
         QuestionFeedback.query.filter_by(submission_id=submission.id).delete()
 
-        any_refer = False
+        # Save new decisions for open questions
         for qn in open_questions:
-            status  = request.form.get(f"q_{qn}_status")
+            status = request.form.get(f"q_{qn}_status")  # 'Pass' or 'Refer' (or 'Fail' label maps to 'Refer' if final)
             comment = (request.form.get(f"q_{qn}_comment") or '').strip()
-            if status not in ('Pass', 'Refer'):
-                continue
-            if status == 'Refer':
-                any_refer = True
-            db.session.add(QuestionFeedback(
-                submission_id=submission.id,
-                question_number=qn,
-                status=status,
-                comment=comment
-            ))
 
-        # Carry forward Pass for locked questions
-        if not is_first_attempt:
-            if has_same_submission_prior:
-                for qn in sorted(prev_pass_locked):
+            # For final attempt UI we will post 'Fail' but we normalize:
+            if status == 'Fail':
+                status = 'Refer'  # store as 'Refer' to keep schema consistent; we'll force overall Fail below
+
+            if status in ('Pass', 'Refer'):
+                db.session.add(QuestionFeedback(
+                    submission_id=submission.id,
+                    question_number=qn,
+                    status=status,
+                    comment=comment
+                ))
+
+        # Carry forward previously passed questions on reattempts so totals are correct
+        if not is_first_attempt and last_prev:
+            for qn, com in prev_pass_comments.items():
+                if qn not in previously_referred:
                     db.session.add(QuestionFeedback(
                         submission_id=submission.id,
                         question_number=qn,
                         status='Pass',
-                        comment=prev_pass_comments.get(qn, '')
+                        comment=com
                     ))
-            else:
-                last_prev = previous_submissions[0]
-                prev_all = QuestionFeedback.query.filter_by(submission_id=last_prev.id).all()
-                for q in prev_all:
-                    if q.status == 'Pass' and q.question_number not in previously_referred:
-                        db.session.add(QuestionFeedback(
-                            submission_id=submission.id,
-                            question_number=q.question_number,
-                            status='Pass',
-                            comment=q.comment or ''
-                        ))
 
-        # Finalize submission
+        # Finalize submission outcome
         submission.marked = True
-        all_feedback = QuestionFeedback.query.filter_by(submission_id=submission.id).all()
-        total  = len(all_feedback)
-        passed = sum(1 for f in all_feedback if f.status == 'Pass')
+        all_fb = QuestionFeedback.query.filter_by(submission_id=submission.id).all()
+        total = len(all_fb)
+        passed = sum(1 for f in all_fb if f.status == 'Pass')
         submission.score = passed
 
-        if passed < total:
-            submission.is_referral = True
-            submission.referral_count = (submission.referral_count or 0) + 1
-            flash(f'Saved: {passed}/{total} questions passed. Submission set to Referral.', 'warning')
-        else:
+        if passed == total and total > 0:
+            # Full pass
             submission.is_referral = False
             flash(f'Saved: all {passed} questions passed. Submission set to Pass.', 'success')
+        else:
+            if final_attempt:
+                # NEW RULE: final attempt & not full pass => force Fail (no more referrals)
+                submission.is_referral = False
+                submission.score = 0  # treat as fail score (optional but clear)
+                flash('Saved on final attempt: not all questions passed. Submission set to Fail.', 'danger')
+            else:
+                # Still have attempts left → Referral as before
+                submission.is_referral = True
+                submission.referral_count = (submission.referral_count or 0) + 1
+                flash(f'Saved: {passed}/{total} questions passed. Submission set to Referral.', 'warning')
 
         db.session.commit()
         return redirect(url_for('marker_view_student', student_id=student.id))
 
-    # GET: build rows
-    pdf_filename = submission.corrected_submission_path or submission.file_path
-    is_pdf = bool(pdf_filename and pdf_filename.lower().endswith('.pdf'))
-
+    # GET: build rows for the template; lock previously passed when not first attempt
     rows = []
     for qn in range(1, q_count + 1):
         is_open = True if is_first_attempt else (qn in previously_referred)
@@ -773,17 +910,16 @@ def mark_workbook_questions(submission_id):
             'prev_comment': None if is_open else prev_pass_comments.get(qn, '')
         })
 
-    return render_template(
-        'mark_workbook_questions.html',
-        submission=submission,
-        student=student,
-        wb_number=wb_num,
-        q_count=q_count,
-        rows=rows,
-        pdf_filename=pdf_filename if is_pdf else None,
-        previously_referred=sorted(previously_referred),
-        is_first_attempt=is_first_attempt
-    )
+    pdf_filename = submission.corrected_submission_path or submission.file_path
+    is_pdf = bool(pdf_filename and pdf_filename.lower().endswith('.pdf'))
+
+    return render_template('mark_workbook_questions.html',
+                           submission=submission, student=student, wb_number=wb_num,
+                           q_count=q_count, rows=rows,
+                           pdf_filename=pdf_filename if is_pdf else None,
+                           previously_referred=sorted(previously_referred),
+                           is_first_attempt=is_first_attempt,
+                           final_attempt=final_attempt)  # <-- tell template
 
 # ===================================================
 # Export Student Report (merge PDFs)
@@ -791,7 +927,6 @@ def mark_workbook_questions(submission_id):
 @app.route('/export_student_report/<int:student_id>')
 @login_required
 def export_student_report(student_id):
-    # markers can export only for assigned students; admins can export anyone
     if current_user.role == 'marker':
         if not marker_is_assigned_to_student(current_user.id, student_id):
             abort(403)
@@ -799,32 +934,27 @@ def export_student_report(student_id):
         abort(403)
 
     student = db.session.get(User, student_id)
-    if not student:
-        abort(404)
+    if not student: abort(404)
 
     required = COURSE_WORKBOOKS.get(student.course, 3)
     candidates = []
     for wb in range(1, required + 1):
         latest = (WorkbookSubmission.query
                   .filter_by(student_id=student.id, workbook_number=wb)
-                  .order_by(WorkbookSubmission.submission_time.desc())
-                  .first())
+                  .order_by(WorkbookSubmission.submission_time.desc()).first())
         if not latest:
             candidates.append((wb, None, "missing")); continue
         chosen = latest.corrected_submission_path or latest.file_path
         if not chosen:
             candidates.append((wb, None, "no_file")); continue
         fullpath = os.path.join(app.config['UPLOAD_FOLDER'], chosen)
-        if not os.path.exists(fullpath):
-            candidates.append((wb, None, "not_found")); continue
-        candidates.append((wb, fullpath, "ok"))
+        candidates.append((wb, fullpath if os.path.exists(fullpath) else None, "ok" if os.path.exists(fullpath) else "not_found"))
 
     merger = PdfMerger()
     merged_any = False
     merged_list, skipped_list = [], []
-
     for wb, path, state in sorted(candidates, key=lambda t: t[0]):
-        if state != "ok":
+        if state != "ok" or not path:
             skipped_list.append(f"WB{wb}: {state}")
             continue
         if not path.lower().endswith('.pdf'):
@@ -853,33 +983,24 @@ def export_student_report(student_id):
                 skipped_list.append(f"WB{wb}: unreadable (skipped)")
 
     if not merged_any:
-        msg = "No PDF workbooks could be merged."
-        if skipped_list:
-            msg += " Skipped: " + "; ".join(skipped_list[:6]) + ("…" if len(skipped_list) > 6 else "")
-        flash(msg, "warning")
-        if current_user.role == 'marker':
-            return redirect(url_for('marker_view_student', student_id=student.id))
-        return redirect(url_for('admin_dashboard'))
+        flash("No PDF workbooks could be merged." + (f" Skipped: {'; '.join(skipped_list)}" if skipped_list else ""), "warning")
+        return redirect(url_for('marker_view_student', student_id=student.id) if current_user.role == 'marker' else 'admin_dashboard')
 
     buf = BytesIO()
-    try:
-        merger.write(buf)
+    try: merger.write(buf)
     finally:
         try: merger.close()
         except Exception: pass
     buf.seek(0)
 
-    if merged_list:
-        flash("Merged: " + "; ".join(merged_list[:6]) + ("…" if len(merged_list) > 6 else ""), "success")
-    if skipped_list:
-        flash("Skipped: " + "; ".join(skipped_list[:6]) + ("…" if len(skipped_list) > 6 else ""), "info")
+    if merged_list: flash("Merged: " + "; ".join(merged_list[:6]) + ("…" if len(merged_list) > 6 else ""), "success")
+    if skipped_list: flash("Skipped: " + "; ".join(skipped_list[:6]) + ("…" if len(skipped_list) > 6 else ""), "info")
 
     download_name = f"{secure_filename(student.username or 'student')}_workbooks.pdf"
-    return send_file(buf, as_attachment=True, download_name=download_name,
-                     mimetype="application/pdf", max_age=0)
+    return send_file(buf, as_attachment=True, download_name=download_name, mimetype="application/pdf", max_age=0)
 
 # ===================================================
-# Routes: Admin
+# Routes: Admin (dashboard, assign, delete, activity)
 # ===================================================
 @app.route('/admin_dashboard')
 @login_required
@@ -910,40 +1031,36 @@ def admin_dashboard():
         else:
             status_counts["Awaiting Marking"] += 1
 
+    recent_submissions = (WorkbookSubmission.query
+                          .order_by(WorkbookSubmission.submission_time.desc())
+                          .limit(8).all())
+
     return render_template('admin_dashboard.html', students=students, markers=markers,
                            assignments=assignments, workload=workload,
-                           status_counts=status_counts)
+                           status_counts=status_counts, recent_submissions=recent_submissions)
 
 @app.route('/admin_assign', methods=['GET', 'POST'])
 @login_required
 def admin_assign():
     if current_user.role != 'admin':
         return redirect(url_for('login'))
-
     if request.method == 'POST':
         student_id = request.form.get('student_id')
         marker_id  = request.form.get('marker_id')
         if not student_id or not marker_id:
             flash('Please choose both a student and a marker.', 'warning')
             return redirect(url_for('admin_assign'))
-        try:
-            student_id = int(student_id); marker_id = int(marker_id)
+        try: student_id = int(student_id); marker_id = int(marker_id)
         except ValueError:
-            flash('Invalid selection.', 'danger')
-            return redirect(url_for('admin_assign'))
+            flash('Invalid selection.', 'danger'); return redirect(url_for('admin_assign'))
 
-        student = db.session.get(User, student_id)
-        marker  = db.session.get(User, marker_id)
-        if not student or student.role != 'student':
-            flash('Selected student not found.', 'danger'); return redirect(url_for('admin_assign'))
-        if not marker or marker.role != 'marker':
-            flash('Selected marker not found.', 'danger'); return redirect(url_for('admin_assign'))
+        student = db.session.get(User, student_id); marker = db.session.get(User, marker_id)
+        if not student or student.role != 'student': flash('Selected student not found.', 'danger'); return redirect(url_for('admin_assign'))
+        if not marker or marker.role != 'marker': flash('Selected marker not found.', 'danger'); return redirect(url_for('admin_assign'))
 
         assignment = Assignment.query.filter_by(student_id=student.id).first()
-        if assignment:
-            assignment.marker_id = marker.id
-        else:
-            db.session.add(Assignment(student_id=student.id, marker_id=marker.id))
+        if assignment: assignment.marker_id = marker.id
+        else: db.session.add(Assignment(student_id=student.id, marker_id=marker.id))
         db.session.commit()
         flash(f'Assigned {student.username} to {marker.username}.', 'success')
         return redirect(url_for('admin_assign'))
@@ -951,9 +1068,7 @@ def admin_assign():
     students = User.query.filter_by(role='student').order_by(User.username.asc()).all()
     markers  = User.query.filter_by(role='marker').order_by(User.username.asc()).all()
     current_marker_by_student = {a.student_id: a.marker_id for a in Assignment.query.all()}
-
-    return render_template('admin_assign.html',
-                           students=students, markers=markers,
+    return render_template('admin_assign.html', students=students, markers=markers,
                            current_marker_by_student=current_marker_by_student)
 
 @app.route('/admin_delete_students')
@@ -975,8 +1090,7 @@ def delete_student(student_id):
         return redirect(url_for('admin_delete_students'))
 
     assignment = Assignment.query.filter_by(student_id=student.id).first()
-    if assignment:
-        db.session.delete(assignment)
+    if assignment: db.session.delete(assignment)
 
     submissions = WorkbookSubmission.query.filter_by(student_id=student.id).all()
     for sub in submissions:
@@ -985,8 +1099,7 @@ def delete_student(student_id):
         QuestionFeedback.query.filter_by(submission_id=sub.id).delete()
         db.session.delete(sub)
 
-    db.session.delete(student)
-    db.session.commit()
+    db.session.delete(student); db.session.commit()
     flash('Student and related data deleted.', 'success')
     return redirect(url_for('admin_delete_students'))
 
@@ -998,17 +1111,14 @@ def admin_delete_markers():
     markers = User.query.filter_by(role='marker').order_by(User.username.asc()).all()
     assigned_counts = {m.id: 0 for m in markers}
     for a in Assignment.query.all():
-        if a.marker_id in assigned_counts:
-            assigned_counts[a.marker_id] += 1
-    return render_template('admin_delete_markers.html',
-                           markers=markers, assigned_counts=assigned_counts)
+        if a.marker_id in assigned_counts: assigned_counts[a.marker_id] += 1
+    return render_template('admin_delete_markers.html', markers=markers, assigned_counts=assigned_counts)
 
 @app.route('/delete_marker/<int:marker_id>', methods=['POST'])
 @login_required
 def delete_marker(marker_id):
     if current_user.role != 'admin':
         abort(403)
-
     marker = db.session.get(User, marker_id)
     if not marker or marker.role != 'marker':
         flash('Only marker accounts can be deleted here.', 'warning')
@@ -1016,15 +1126,10 @@ def delete_marker(marker_id):
 
     assignments = Assignment.query.filter_by(marker_id=marker.id).all()
     unassigned = len(assignments)
-    for a in assignments:
-        db.session.delete(a)
+    for a in assignments: db.session.delete(a)
 
-    db.session.delete(marker)
-    db.session.commit()
-    flash(
-        f'Marker deleted. {unassigned} student(s) are now unassigned.' if unassigned else 'Marker deleted.',
-        'success'
-    )
+    db.session.delete(marker); db.session.commit()
+    flash(('Marker deleted. {0} student(s) are now unassigned.'.format(unassigned)) if unassigned else 'Marker deleted.', 'success')
     return redirect(url_for('admin_delete_markers'))
 
 # -------- Admin Activity log pages --------
@@ -1034,31 +1139,60 @@ def admin_activity():
     if current_user.role != 'admin':
         return redirect(url_for('login'))
 
+    def _last_event_readable(p: Path):
+        """Return (ts_iso, formatted_ts, action_str) for the last valid JSONL event in a log file."""
+        if not p.exists():
+            return None, None, None
+        try:
+            # Read all and walk backwards to find last valid JSON event
+            lines = p.read_text(encoding="utf-8", errors="ignore").splitlines()
+            for line in reversed(lines):
+                try:
+                    obj = json.loads(line)
+                    ts = obj.get("ts")
+                    ev = (obj.get("event") or "").lower()
+                    wb = (obj.get("details") or {}).get("workbook_number")
+
+                    if ev == "login":
+                        action = "Login"
+                    elif ev == "upload":
+                        action = f"Upload WB#{wb}" if wb else "Upload"
+                    elif ev == "reupload":
+                        action = f"Re-upload WB#{wb}" if wb else "Re-upload"
+                    elif ev == "view_feedback":
+                        action = f"Viewed Feedback WB#{wb}" if wb else "Viewed Feedback"
+                    else:
+                        action = ev.replace("_", " ").title() if ev else "—"
+
+                    return ts, _format_ts_human(ts), action
+                except Exception:
+                    continue
+        except Exception:
+            pass
+        return None, None, None
+
     students = User.query.filter_by(role='student').order_by(User.username.asc()).all()
     rows = []
     for s in students:
         p = student_log_path(s.id)
-        exists = p.exists()
+        # count entries (best-effort)
         entries = 0
-        last_ts = None
-        if exists:
+        if p.exists():
             try:
-                # count lines and read last line
                 with p.open("rb") as f:
                     for entries, _ in enumerate(f, 1):
                         pass
-                if entries:
-                    last_line = p.read_text(encoding="utf-8", errors="ignore").splitlines()[-1]
-                    last_ts = json.loads(last_line).get("ts", None)
             except Exception:
-                entries, last_ts = 0, None
+                entries = 0
 
+        last_ts, last_ts_human, last_action = _last_event_readable(p)
         rows.append({
             "student": s,
-            "has_log": exists,
+            "has_log": p.exists(),
             "entries": entries,
             "last_ts": last_ts,
-            "last_ts_human": _format_ts_human(last_ts)
+            "last_ts_human": last_ts_human,
+            "last_action": last_action,
         })
 
     return render_template('admin_activity.html', rows=rows)
@@ -1068,10 +1202,8 @@ def admin_activity():
 def admin_activity_student(student_id):
     if current_user.role != 'admin':
         return redirect(url_for('login'))
-
     student = db.session.get(User, student_id)
-    if not student or student.role != 'student':
-        abort(404)
+    if not student or student.role != 'student': abort(404)
 
     p = student_log_path(student_id)
     events = []
@@ -1091,88 +1223,51 @@ def admin_activity_student(student_id):
         except Exception:
             pass
 
-    # Build simple, human-readable actions and formatted timestamps
-    simple_events = []
+    simple = []
     for e in events:
         ev = (e.get("event") or "").lower()
         wb = e.get("details", {}).get("workbook_number")
-        if ev == "login":
-            action = "Login"
-        elif ev == "upload":
-            action = f"Upload WB#{wb}" if wb else "Upload"
-        elif ev == "reupload":
-            action = f"Re-upload WB#{wb}" if wb else "Re-upload"
-        elif ev == "view_feedback":
-            action = f"Viewed Feedback WB#{wb}" if wb else "Viewed Feedback"
-        else:
-            action = ev.replace("_", " ").title() if ev else "—"
+        if ev == "login": action = "Login"
+        elif ev == "upload": action = f"Upload WB#{wb}" if wb else "Upload"
+        elif ev == "reupload": action = f"Re-upload WB#{wb}" if wb else "Re-upload"
+        elif ev == "view_feedback": action = f"Viewed Feedback WB#{wb}" if wb else "Viewed Feedback"
+        else: action = ev.replace("_", " ").title() if ev else "—"
+        simple.append({"ts": e.get("ts"), "formatted_ts": _format_ts_human(e.get("ts")), "action": action})
 
-        simple_events.append({
-            "ts": e.get("ts"),
-            "formatted_ts": _format_ts_human(e.get("ts")),
-            "action": action
-        })
-
-    return render_template(
-        'admin_activity_student.html',
-        student=student,
-        events=simple_events,
-        log_exists=p.exists()
-    )
+    return render_template('admin_activity_student.html',
+                           student=student, events=simple, log_exists=p.exists())
 
 @app.route('/admin_activity/<int:student_id>/download')
 @login_required
 def admin_activity_download(student_id):
     if current_user.role != 'admin':
         return redirect(url_for('login'))
-
     p = student_log_path(student_id)
     if not p.exists():
         flash('No log file for this student.', 'info')
         return redirect(url_for('admin_activity_student', student_id=student_id))
-
-    # Read + parse JSONL, then output simplified, formatted lines
     records = []
     try:
         for line in p.read_text(encoding="utf-8", errors="ignore").splitlines():
             try:
                 obj = json.loads(line)
-                ts = obj.get("ts")
-                ev = (obj.get("event") or "").lower()
-                details = obj.get("details") or {}
-                wb = details.get("workbook_number")
-
-                if ev == "login":
-                    action = "Login"
-                elif ev == "upload":
-                    action = f"Upload WB#{wb}" if wb else "Upload"
-                elif ev == "reupload":
-                    action = f"Re-upload WB#{wb}" if wb else "Re-upload"
-                elif ev == "view_feedback":
-                    action = f"Viewed Feedback WB#{wb}" if wb else "Viewed Feedback"
-                else:
-                    action = ev.replace("_", " ").title() if ev else "—"
-
+                ts = obj.get("ts"); ev = (obj.get("event") or "").lower()
+                wb = (obj.get("details") or {}).get("workbook_number")
+                if ev == "login": action = "Login"
+                elif ev == "upload": action = f"Upload WB#{wb}" if wb else "Upload"
+                elif ev == "reupload": action = f"Re-upload WB#{wb}" if wb else "Re-upload"
+                elif ev == "view_feedback": action = f"Viewed Feedback WB#{wb}" if wb else "Viewed Feedback"
+                else: action = ev.replace("_", " ").title() if ev else "—"
                 records.append((ts, action))
             except Exception:
                 continue
     except Exception:
         records = []
-
-    # Newest first
     records.sort(key=lambda r: r[0] or "", reverse=True)
-
-    # Format nicely
-    lines = [f"{_format_ts_human(ts)} — {action}" for ts, action in records]
-    if not lines:
-        lines = ["No log entries for this student."]
-
+    lines = [f"{_format_ts_human(ts)} — {action}" for ts, action in records] or ["No log entries for this student."]
     buf = BytesIO(("\n".join(lines) + "\n").encode("utf-8"))
-
     student = db.session.get(User, student_id)
-    base = secure_filename((student.username if student else f"student_{student_id}") or f"student_{student_id}")
-    filename = f"{base}_activity.txt"
-
+    filename = f"{secure_filename((student.username if student else f'student_{student_id}') or f'student_{student_id}')}_activity.txt"
     return send_file(buf, as_attachment=True, download_name=filename, mimetype="text/plain")
 
 @app.route('/admin_activity/<int:student_id>/clear', methods=['POST'])
@@ -1182,14 +1277,131 @@ def admin_activity_clear(student_id):
         return redirect(url_for('login'))
     p = student_log_path(student_id)
     try:
-        if p.exists():
-            p.unlink()
-            flash('Log cleared for student.', 'success')
-        else:
-            flash('No log file to clear.', 'info')
+        if p.exists(): p.unlink(); flash('Log cleared for student.', 'success')
+        else: flash('No log file to clear.', 'info')
     except Exception:
         flash('Could not clear log file.', 'danger')
     return redirect(url_for('admin_activity_student', student_id=student_id))
+
+# ===================================================
+# Admin: Cohorts / Classes
+# ===================================================
+@app.route('/admin_cohorts', methods=['GET', 'POST'])
+@login_required
+def admin_cohorts():
+    if current_user.role != 'admin':
+        return redirect(url_for('login'))
+    markers = User.query.filter_by(role='marker').order_by(User.username.asc()).all()
+    courses = sorted(COURSE_WORKBOOKS.keys())
+
+    if request.method == 'POST':
+        course = request.form.get('course') or ''
+        marker_id = request.form.get('marker_id') or ''
+        start_date_str = request.form.get('start_date') or ''
+        name = (request.form.get('name') or '').strip()
+
+        if course not in COURSE_WORKBOOKS:
+            flash('Please choose a valid course.', 'warning'); return redirect(url_for('admin_cohorts'))
+        try:
+            marker_id = int(marker_id)
+        except ValueError:
+            flash('Please choose a marker.', 'warning'); return redirect(url_for('admin_cohorts'))
+        marker = db.session.get(User, marker_id)
+        if not marker or marker.role != 'marker':
+            flash('Selected marker not found.', 'danger'); return redirect(url_for('admin_cohorts'))
+        try:
+            start_date = datetime.strptime(start_date_str, '%Y-%m-%d').date()
+        except ValueError:
+            flash('Please provide a valid start date (YYYY-MM-DD).', 'warning'); return redirect(url_for('admin_cohorts'))
+
+        # unique passcode generation
+        passcode = None
+        for _ in range(6):
+            candidate = generate_passcode(10)
+            if not Cohort.query.filter_by(passcode=candidate).first():
+                passcode = candidate; break
+        if not passcode:
+            flash('Could not generate a unique passcode. Try again.', 'danger')
+            return redirect(url_for('admin_cohorts'))
+
+        cohort = Cohort(
+            name=name or f"{course} {start_date.strftime('%b %Y')}",
+            course=course, marker_id=marker_id,
+            start_date=start_date, passcode=passcode, active=True
+        )
+        db.session.add(cohort); db.session.commit()
+        flash(f'Cohort created. Passcode: {passcode}', 'success')
+        return redirect(url_for('admin_cohorts'))
+
+    cohorts = Cohort.query.order_by(Cohort.created_at.desc()).all()
+    marker_map = {m.id: m for m in User.query.filter_by(role='marker').all()}
+    return render_template('admin_cohorts.html', cohorts=cohorts, markers=markers,
+                           marker_map=marker_map, courses=courses)
+
+@app.route('/admin_cohorts/<int:cohort_id>/toggle', methods=['POST'])
+@login_required
+def admin_cohorts_toggle(cohort_id):
+    if current_user.role != 'admin':
+        return redirect(url_for('login'))
+    cohort = db.session.get(Cohort, cohort_id)
+    if not cohort: abort(404)
+    cohort.active = not cohort.active
+    db.session.commit()
+    flash(f'Cohort "{cohort.name}" is now {"active" if cohort.active else "inactive"}.', 'info')
+    return redirect(url_for('admin_cohorts'))
+
+@app.route('/admin_cohorts/<int:cohort_id>/regen', methods=['POST'])
+@login_required
+def admin_cohorts_regen(cohort_id):
+    if current_user.role != 'admin':
+        return redirect(url_for('login'))
+    cohort = db.session.get(Cohort, cohort_id)
+    if not cohort: abort(404)
+    for _ in range(6):
+        candidate = generate_passcode(10)
+        if not Cohort.query.filter_by(passcode=candidate).first():
+            cohort.passcode = candidate; break
+    else:
+        flash('Could not generate a new passcode. Try again.', 'danger')
+        return redirect(url_for('admin_cohorts'))
+    db.session.commit()
+    flash(f'New passcode: {cohort.passcode}', 'success')
+    return redirect(url_for('admin_cohorts'))
+
+@app.route('/contact')
+@login_required
+def contact():
+    show_core_contacts = (current_user.role != 'admin')
+
+    marker_user = None
+    show_marker_card = False
+    if current_user.role == 'student':
+        assign = Assignment.query.filter_by(student_id=current_user.id).first()
+        if assign:
+            marker_user = db.session.get(User, assign.marker_id)
+        show_marker_card = marker_user is not None
+
+    # Replace these placeholders if/when you have real addresses
+    contacts = {
+        "director": {
+            "name": "Jane",
+            "title": "Training Director",
+            "email": "jane.edwards@northwestmedicalsolutions.co.uk"
+        },
+        "admin": {
+            "name": "David",
+            "title": "Training Admin Support",
+            "email": "david.batty@northwestmedicalsolutions.co.uk"
+        }
+    }
+
+    return render_template(
+        'contact.html',
+        show_core_contacts=show_core_contacts,
+        show_marker_card=show_marker_card,
+        marker_user=marker_user,
+        contacts=contacts
+    )
 
 # ===================================================
 # Main

@@ -1,131 +1,196 @@
 {% extends 'base.html' %}
-{% block title %}Marker · Mark by Questions{% endblock %}
+{% block title %}Mark · WB {{ wb_number }} — {{ student.username }}{% endblock %}
 
 {% block content %}
-<div class="d-flex justify-content-between align-items-center mb-3">
-  <h2 class="mb-1">Workbook {{ wb_number }} · {{ student.username }}</h2>
-  <div class="d-flex gap-2">
-    <a href="{{ url_for('marker_view_student', student_id=student.id) }}" class="btn btn-light">
-      ← Back
-    </a>
-    <button type="submit" form="questionForm" class="btn btn-primary">
-      Save &amp; Finalize
-    </button>
+<style>
+  /* Sticky top */
+  .topbar {
+    position: sticky; top: -8px; z-index: 20;
+    background: #f5f6f7; padding: 10px 0 6px 0; margin-top: -10px;
+  }
+  .meta-line { font-size: .9rem; color: #6c757d; }
+
+  /* Left PDF panel */
+  .pdf-wrap { border: 1px solid #e9ecef; border-radius: 12px; background: #fff; }
+  .pdf-view {
+    width: 100%; height: calc(100vh - 220px);
+    border: none; border-radius: 12px;
+  }
+  @media (max-width: 991.98px) { .pdf-view { height: 60vh; } }
+
+  /* Right panel scrolls independently */
+  .right-scroll {
+    max-height: calc(100vh - 220px);
+    overflow-y: auto;
+    padding-right: 4px;
+  }
+  @media (max-width: 991.98px) { .right-scroll { max-height: none; } }
+
+  /* Single panel for all questions */
+  .qpanel { border: 1px solid #e9ecef; border-radius: 12px; background: #fff; }
+  .qpanel-header { padding: 14px 14px 8px; border-bottom: 1px solid #eef1f4; }
+  .qpanel-body { padding: 8px 0; }
+  .qrow {
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    gap: .75rem;
+    align-items: center;
+    padding: 10px 14px;
+  }
+  .qrow + .qrow { border-top: 1px solid #f0f2f5; }
+
+  .qcol-left {
+    display:flex; flex-direction:column; align-items:center; gap:.25rem; min-width:52px;
+  }
+  .qbadge { font-weight:700; }
+  .prev-badge { font-size:.72rem; }
+
+  .mark-feedback textarea { min-height: 44px; resize: vertical; }
+
+  .mark-toggle { display:flex; gap:.5rem; align-items:center; }
+
+  /* Feedback highlight */
+  .fbx { transition: border-color .2s ease, background-color .2s ease; }
+  .fbx-pass  { border-color:#198754 !important; background:#eef8f0 !important; }
+  .fbx-refer { border-color:#dc3545 !important; background:#fdeeee !important; }
+  .fbx-fail  { border-color:#dc3545 !important; background:#fdeeee !important; }
+  .fbx[disabled] { background:#f1f3f5 !important; }
+</style>
+
+<!-- Top bar -->
+<div class="topbar d-flex align-items-center justify-content-between">
+  <div class="d-flex align-items-center gap-2">
+    <div>
+      <div class="fw-semibold">Marking: {{ student.username }} — Workbook {{ wb_number }}</div>
+      <div class="meta-line">
+        Attempt {{ (submission.referral_count or 0) + 1 }}
+        {% if final_attempt %} · <span class="text-danger fw-semibold">Final Attempt</span>{% endif %}
+        {% if not is_first_attempt %} · Only previously referred questions are open{% endif %}
+      </div>
+    </div>
+  </div>
+  <div class="d-flex align-items-center gap-2">
+    <a href="{{ url_for('marker_view_student', student_id=student.id) }}" class="btn btn-light btn-sm">← Back to Student</a>
+    <button form="markForm" class="btn btn-success btn-sm">Submit Mark</button>
   </div>
 </div>
 
-<p class="text-muted mb-3">
-  {% if is_first_attempt %}
-    First attempt — all questions are open for marking.
-  {% else %}
-    Reattempt — only previously referred questions are open. Passed questions are locked.
-  {% endif %}
-</p>
+{% if final_attempt %}
+  <div class="alert alert-danger d-flex align-items-center" role="alert">
+    <div><strong>Final Attempt:</strong> any question not marked <em>Pass</em> will result in a <strong>Fail</strong> for this workbook.</div>
+  </div>
+{% endif %}
 
 <div class="row g-3">
   <!-- Left: PDF viewer -->
-  <div class="col-lg-7">
-    <div class="pdf-pane shadow-sm">
-      {% if pdf_filename %}
-        <embed src="{{ url_for('uploaded_file', filename=pdf_filename) }}"
-               type="application/pdf" class="pdf-embed">
-      {% else %}
-        <div class="p-4 text-center text-muted">
-          No PDF available for this submission.
+  <div class="col-lg-6">
+    <div class="card shadow-sm">
+      <div class="card-body">
+        <div class="d-flex align-items-center justify-content-between mb-2">
+          <div class="fw-semibold">Submission File</div>
+          {% if submission.corrected_submission_path %}
+            <span class="badge bg-info text-dark">Re-uploaded</span>
+          {% endif %}
         </div>
-      {% endif %}
+        <div class="pdf-wrap">
+          {% if pdf_filename %}
+            <object data="{{ url_for('uploaded_file', filename=pdf_filename) }}" type="application/pdf" class="pdf-view">
+              <iframe src="{{ url_for('uploaded_file', filename=pdf_filename) }}" class="pdf-view"></iframe>
+            </object>
+          {% else %}
+            <div class="p-3 text-muted">No previewable PDF found. You can still complete marking on the right.</div>
+          {% endif %}
+        </div>
+      </div>
     </div>
   </div>
 
-  <!-- Right: Question feedback -->
-  <div class="col-lg-5">
-    <form method="post" id="questionForm" class="question-form">
-      <div class="d-flex align-items-center justify-content-between mb-2">
-        <h5 class="mb-0">Questions ({{ q_count }})</h5>
-        <div class="d-flex gap-2">
-          <button type="button" class="btn btn-sm btn-outline-secondary" id="setAllPass">Set all open to Pass</button>
-          <button type="button" class="btn btn-sm btn-outline-warning" id="setAllRefer">Set all open to Refer</button>
+  <!-- Right: All questions in one panel (scrolls) -->
+  <div class="col-lg-6">
+    <div class="right-scroll">
+      <form id="markForm" method="post" class="qpanel shadow-sm">
+        <div class="qpanel-header d-flex align-items-center justify-content-between">
+          <div class="fw-semibold">Questions</div>
+          <div class="text-muted small">Select Pass / {% if final_attempt %}Fail{% else %}Refer{% endif %} for each open item</div>
         </div>
-      </div>
-
-      <div class="question-list">
-        {% for q in rows %}
-          <div class="q-card {{ 'locked' if not q.open }}">
-            <div class="d-flex align-items-center justify-content-between">
-              <div class="q-title">
-                Q{{ q.number }}
-                {% if not q.open %}
-                  <span class="badge bg-secondary ms-2">Passed (locked)</span>
+        <div class="qpanel-body">
+          {% for row in rows %}
+          <div class="qrow" data-q="{{ row.number }}">
+            <!-- Left: Q badge + previous state -->
+            <div class="qcol-left">
+              <span class="badge bg-secondary qbadge">Q{{ row.number }}</span>
+              {% if not is_first_attempt %}
+                {% if row.prev_state == 'Refer' %}
+                  <span class="badge bg-danger prev-badge">Referred</span>
+                {% else %}
+                  <span class="badge bg-success prev-badge">Passed</span>
                 {% endif %}
-              </div>
-              {% if q.open %}
-                <div class="btn-group btn-group-sm" role="group" aria-label="Pass/Refer">
-                  <input type="radio" class="btn-check" name="q_{{ q.number }}_status" id="q{{ q.number }}_pass" value="Pass" autocomplete="off">
-                  <label class="btn btn-outline-success" for="q{{ q.number }}_pass">Pass</label>
-                  <input type="radio" class="btn-check" name="q_{{ q.number }}_status" id="q{{ q.number }}_refer" value="Refer" autocomplete="off">
-                  <label class="btn btn-outline-danger" for="q{{ q.number }}_refer">Refer</label>
-                </div>
               {% endif %}
             </div>
 
-            <div class="mt-2">
-              <textarea class="form-control q-comment {{ 'readonly' if not q.open }}"
-                        name="q_{{ q.number }}_comment"
-                        placeholder="{{ 'Previously passed — no comment needed' if not q.open else 'Feedback (optional)'}}"
-                        {% if not q.open %}disabled{% endif %}></textarea>
+            <!-- Middle: feedback box -->
+            <div class="mark-feedback">
+              <textarea
+                class="form-control fbx"
+                name="q_{{ row.number }}_comment"
+                rows="2"
+                {% if not row.open %}disabled{% endif %}
+                placeholder="{% if row.open %}Add feedback…{% else %}Previously passed — locked{% endif %}">{{ row.prev_comment or '' }}</textarea>
+            </div>
+
+            <!-- Right: Pass/Refer(or Fail) -->
+            <div class="mark-toggle">
+              {% set neg_label = 'Fail' if final_attempt else 'Refer' %}
+              {% set neg_value = 'Fail' if final_attempt else 'Refer' %}
+
+              <input class="btn-check q-radio" type="radio" name="q_{{ row.number }}_status" id="q{{ row.number }}_pass"
+                     value="Pass" {% if not row.open %}disabled{% endif %} autocomplete="off" required>
+              <label class="btn btn-outline-success btn-sm" for="q{{ row.number }}_pass">Pass</label>
+
+              <input class="btn-check q-radio" type="radio" name="q_{{ row.number }}_status" id="q{{ row.number }}_neg"
+                     value="{{ neg_value }}" {% if not row.open %}disabled{% endif %} autocomplete="off" required>
+              <label class="btn btn-outline-danger btn-sm" for="q{{ row.number }}_neg">{{ neg_label }}</label>
             </div>
           </div>
-        {% endfor %}
-      </div>
-    </form>
+          {% endfor %}
+        </div>
+      </form>
+    </div>
   </div>
 </div>
+{% endblock %}
 
-<style>
-  .pdf-pane { border:1px solid #e9ecef; border-radius:12px; background:#fff; overflow:hidden; }
-  .pdf-embed { display:block; width:100%; height:78vh; }
-  .question-form .question-list { max-height:78vh; overflow:auto; padding-right:6px; }
-  .q-card { border:1px solid #e9ecef; border-radius:12px; padding:12px 12px; background:#fff; margin-bottom:10px; }
-  .q-card.locked { background:#f6f7f8; opacity:.8; }
-  .q-title { font-weight:600; }
-  .q-comment { min-height:64px; transition: background-color .15s ease, border-color .15s ease; }
-  .q-comment.pass { background: #eaf7ee; border-color:#bfe4c7; }
-  .q-comment.refer { background: #fff1f0; border-color:#f5c2c7; }
-</style>
-
+{% block extra_scripts %}
 <script>
   (function(){
-    function updateColors(wrapper){
-      const pass = wrapper.querySelector('input[id$="_pass"]');
-      const refer = wrapper.querySelector('input[id$="_refer"]');
-      const textarea = wrapper.querySelector('.q-comment');
-      if (!textarea || textarea.disabled) return;
-      textarea.classList.remove('pass', 'refer');
-      if (pass && pass.checked) textarea.classList.add('pass');
-      if (refer && refer.checked) textarea.classList.add('refer');
+    const finalAttempt = {{ 'true' if final_attempt else 'false' }};
+    const rows = document.querySelectorAll('.qrow');
+
+    function applyStatusStyles(row){
+      const q = row.getAttribute('data-q');
+      const area = row.querySelector('textarea.fbx');
+      if (!area) return;
+
+      area.classList.remove('fbx-pass','fbx-refer','fbx-fail');
+
+      const pass = row.querySelector(`#q${q}_pass`);
+      const neg  = row.querySelector(`#q${q}_neg`);
+
+      let state = null;
+      if (pass && pass.checked) state = 'Pass';
+      else if (neg && neg.checked) state = finalAttempt ? 'Fail' : 'Refer';
+
+      if (state === 'Pass')       area.classList.add('fbx-pass');
+      else if (state === 'Refer') area.classList.add('fbx-refer');
+      else if (state === 'Fail')  area.classList.add('fbx-fail');
     }
 
-    document.querySelectorAll('.q-card').forEach(function(card){
-      card.addEventListener('change', function(e){
-        if (e.target.matches('input[type="radio"]')) updateColors(card);
-      });
+    rows.forEach(row => {
+      const q = row.getAttribute('data-q');
+      const inputs = row.querySelectorAll(`input[name="q_${q}_status"]`);
+      inputs.forEach(i => i.addEventListener('change', () => applyStatusStyles(row)));
+      applyStatusStyles(row);
     });
-
-    document.getElementById('setAllPass')?.addEventListener('click', function(){
-      document.querySelectorAll('.q-card:not(.locked)').forEach(function(card){
-        const pass = card.querySelector('input[id$="_pass"]');
-        if (pass) { pass.checked = true; updateColors(card); }
-      });
-    });
-
-    document.getElementById('setAllRefer')?.addEventListener('click', function(){
-      document.querySelectorAll('.q-card:not(.locked)').forEach(function(card){
-        const refer = card.querySelector('input[id$="_refer"]');
-        if (refer) { refer.checked = true; updateColors(card); }
-      });
-    });
-
-    document.querySelectorAll('.q-card').forEach(updateColors);
   })();
 </script>
 {% endblock %}

@@ -2,10 +2,53 @@
 {% block title %}Student · Dashboard{% endblock %}
 
 {% block content %}
-<h2 class="mb-1">My Workbooks</h2>
-<p class="text-muted">Submit your workbooks, track attempts, and view marker feedback.</p>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css">
+<style>
+  .status-card { border-radius: 14px; padding: 16px 20px; }
+  .status-icon {
+    width: 50px; height: 50px;
+    display:flex; align-items:center; justify-content:center;
+    border-radius: 50%;
+    font-size: 1.5rem;
+    box-shadow: 0 4px 10px rgba(0,0,0,.2);
+  }
+  .action-form .upload-group { min-width: 280px; }
+  @media (max-width: 768px){
+    .action-form .upload-group { min-width: 100%; }
+  }
+  /* Countdown colors */
+  .countdown-ok { color: #198754; font-weight: 700; }     /* green */
+  .countdown-warn { color: #d68910; font-weight: 700; }   /* amber */
+  .countdown-bad { color: #dc3545; font-weight: 700; }    /* red */
+</style>
 
-<!-- Overall status card -->
+{# --- Header with welcome + course meta + countdown --- #}
+{% set _start = course_start_date %}
+{% set _deadline = course_deadline %}
+{% set _start_iso = _start.strftime('%Y-%m-%dT%H:%M:%SZ') if _start else '' %}
+{% set _deadline_iso = _deadline.strftime('%Y-%m-%dT%H:%M:%SZ') if _deadline else '' %}
+{% set _start_human = _start.strftime('%d %b %Y') if _start else '—' %}
+{% set _deadline_human = _deadline.strftime('%d %b %Y') if _deadline else '—' %}
+
+<div id="courseMeta" class="card shadow-sm mb-3" data-deadline="{{ _deadline_iso }}">
+  <div class="card-body">
+    <h2 class="mb-1">Welcome, {{ current_user.username }}!</h2>
+    <div class="text-muted">
+      Course: <strong>{{ current_user.course or '—' }}</strong>
+      &nbsp;&middot;&nbsp;
+      Started on: <strong>{{ _start_human }}</strong>
+      &nbsp;&middot;&nbsp;
+      Allowed: <strong>{{ months_allowed }} months</strong>
+    </div>
+    <div class="mt-2">
+      <span class="text-muted">Remaining Time to Complete Submissions:</span>
+      <span id="deadlineCountdown" class="fw-semibold ms-1">—</span>
+      <span class="text-muted small">(Deadline: {{ _deadline_human }})</span>
+    </div>
+  </div>
+</div>
+
+{# --- Overall status card --- #}
 <div class="mb-4">
   {% if overall_status == 'Pass' %}
     <div class="status-card bg-success text-white shadow-sm">
@@ -46,6 +89,7 @@
   {% endif %}
 </div>
 
+{# --- Workbooks table --- #}
 <div class="card shadow-sm">
   <div class="card-body">
     <div class="table-responsive">
@@ -57,18 +101,26 @@
             <th class="text-center" style="width:120px;">Attempts Left</th>
             <th>Last Submitted</th>
             <th>Marker Feedback</th>
-            <th class="text-end" style="min-width: 440px;">Actions</th>
+            <th class="text-end" style="min-width: 460px;">Actions</th>
           </tr>
         </thead>
         <tbody>
           {% for row in items %}
+          {% set latest = row.latest %}
+          {% set ns = namespace(label=row.label, badge=row.badge) %}
+          {# Override to show Failed if no attempts remain and not passed #}
+          {% if latest and latest.marked and row.attempts_left == 0 and (latest.is_referral or (latest.score is not none and latest.score == 0)) %}
+            {% set ns.label = 'Failed' %}
+            {% set ns.badge = 'bg-dark text-white' %}
+          {% endif %}
+
           <tr>
             <td class="fw-semibold">Workbook {{ row.wb_number }}</td>
 
             <!-- Status badge -->
-            <td><span class="badge {{ row.badge }}">{{ row.label }}</span></td>
+            <td><span class="badge {{ ns.badge }}">{{ ns.label }}</span></td>
 
-            <!-- Attempts left (single number) -->
+            <!-- Attempts left -->
             <td class="text-center">
               {% if row.attempts_so_far == 0 %}
                 <span class="text-muted">—</span>
@@ -79,19 +131,19 @@
 
             <!-- Last submitted -->
             <td>
-              {% if row.latest %}
-                <span title="{{ row.latest.submission_time }}">
-                  {{ row.latest.submission_time.strftime('%Y-%m-%d %H:%M') }}
+              {% if latest %}
+                <span title="{{ latest.submission_time }}">
+                  {{ latest.submission_time.strftime('%Y-%m-%d %H:%M') }}
                 </span>
               {% else %}
                 <span class="text-muted">—</span>
               {% endif %}
             </td>
 
-            <!-- Short feedback snippet -->
+            <!-- Feedback snippet -->
             <td>
-              {% if row.latest and row.latest.feedback %}
-                <span class="small">{{ row.latest.feedback }}</span>
+              {% if latest and latest.feedback %}
+                <span class="small">{{ latest.feedback }}</span>
               {% else %}
                 <span class="text-muted small">—</span>
               {% endif %}
@@ -99,7 +151,7 @@
 
             <!-- Actions -->
             <td class="text-end">
-              <div class="action-bar d-inline-flex flex-wrap justify-content-end gap-2">
+              <div class="d-flex flex-wrap justify-content-end align-items-center gap-2">
 
                 {% if row.can_upload %}
                   <!-- First submission -->
@@ -114,35 +166,29 @@
 
                 {% elif row.can_reattempt %}
                   <!-- Reattempt after referral -->
-                  <div class="d-flex flex-wrap align-items-center gap-2">
-                    <span class="small text-muted me-1">
-                      Attempts left: <span class="fw-semibold">{{ row.attempts_left }}</span>
-                    </span>
-
-                    <form action="{{ url_for('student_dashboard') }}" method="post" enctype="multipart/form-data"
-                          class="action-form d-flex flex-wrap align-items-center gap-2">
-                      <input type="hidden" name="workbook_number" value="{{ row.wb_number }}">
-                      <div class="input-group input-group-sm upload-group">
-                        <input type="file" name="referral_file" class="form-control" accept="application/pdf" required>
-                        <button type="submit" class="btn btn-danger">Re-upload</button>
-                      </div>
-                    </form>
-
-                    {% if row.latest and row.latest.marked %}
+                  <form action="{{ url_for('student_dashboard') }}" method="post" enctype="multipart/form-data"
+                        class="action-form d-flex flex-wrap align-items-center gap-2">
+                    <input type="hidden" name="workbook_number" value="{{ row.wb_number }}">
+                    <div class="input-group input-group-sm upload-group">
+                      <input type="file" name="referral_file" class="form-control" accept="application/pdf" required>
+                      <button type="submit" class="btn btn-danger">Re-upload</button>
+                    </div>
+                    {% if latest and latest.marked %}
+                      <!-- INLINE: View feedback to the right of re-upload -->
                       <a class="btn btn-outline-secondary btn-sm"
                          href="{{ url_for('student_view_feedback', workbook_number=row.wb_number) }}">
                         View feedback
                       </a>
                     {% endif %}
-                  </div>
-                  {% if row.latest and row.latest.corrected_submission_path %}
+                  </form>
+                  {% if latest and latest.corrected_submission_path %}
                     <div class="small text-muted w-100 text-end">
-                      Reattempt uploaded: {{ row.latest.corrected_submission_path }}
+                      Reattempt uploaded: {{ latest.corrected_submission_path }}
                     </div>
                   {% endif %}
 
                 {% else %}
-                  {% if row.latest and row.latest.marked %}
+                  {% if latest and latest.marked %}
                     <a class="btn btn-outline-secondary btn-sm"
                        href="{{ url_for('student_view_feedback', workbook_number=row.wb_number) }}">
                       View feedback
@@ -172,23 +218,51 @@
   <span class="badge bg-secondary">Awaiting submission</span>
   <span class="badge bg-warning text-dark">Submitted</span>
   <span class="badge bg-danger">Waiting for reattempt</span>
+  <span class="badge bg-dark text-white">Failed</span>
   <span class="ms-2 text-muted">Max 3 attempts per workbook.</span>
 </div>
 
-<!-- Styles -->
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css">
-<style>
-  .status-card { border-radius: 14px; padding: 16px 20px; }
-  .status-icon {
-    width: 50px; height: 50px;
-    display:flex; align-items:center; justify-content:center;
-    border-radius: 50%;
-    font-size: 1.5rem;
-    box-shadow: 0 4px 10px rgba(0,0,0,.2);
+<script>
+(function(){
+  const meta = document.getElementById('courseMeta');
+  const targetEl = document.getElementById('deadlineCountdown');
+  if(!meta || !targetEl) return;
+
+  const deadlineISO = meta.dataset.deadline;
+  if(!deadlineISO){
+    targetEl.textContent = 'Deadline not set';
+    return;
   }
-  .action-form .upload-group { min-width: 280px; }
-  @media (max-width: 768px){
-    .action-form .upload-group { min-width: 100%; }
+  const deadline = new Date(deadlineISO);
+
+  function paintClass(days){
+    targetEl.classList.remove('countdown-ok','countdown-warn','countdown-bad');
+    if (days <= 14)      targetEl.classList.add('countdown-bad');   // red
+    else if (days <= 60) targetEl.classList.add('countdown-warn');  // amber
+    else                 targetEl.classList.add('countdown-ok');    // green
   }
-</style>
+
+  function updateCountdown(){
+    const now = new Date();
+    const diffMs = deadline - now;
+
+    if (diffMs <= 0){
+      targetEl.textContent = '0d 0h 0m';
+      paintClass(0);
+      return;
+    }
+
+    const minutes = Math.floor(diffMs / 60000);
+    const days = Math.floor(minutes / (60*24));
+    const hours = Math.floor((minutes - days*60*24) / 60);
+    const mins = minutes % 60;
+
+    targetEl.textContent = `${days}d ${hours}h ${mins}m`;
+    paintClass(days);
+  }
+
+  updateCountdown();
+  setInterval(updateCountdown, 60 * 1000);
+})();
+</script>
 {% endblock %}

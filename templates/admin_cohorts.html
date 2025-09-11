@@ -1,0 +1,123 @@
+{% extends 'base.html' %}
+{% block title %}Admin · Cohorts{% endblock %}
+
+{% block content %}
+<style>
+  .stat-card { border-radius:12px; border:1px solid #e9ecef; }
+  .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace; }
+  .table-sm td, .table-sm th { padding: .45rem .6rem; }
+</style>
+
+<div class="d-flex align-items-center justify-content-between mb-3">
+  <div>
+    <h2 class="mb-0">Cohorts / Classes</h2>
+    <div class="text-muted small">Create a class with course, marker, and start date. A passcode will be generated for student registration.</div>
+  </div>
+  <a href="{{ url_for('admin_dashboard') }}" class="btn btn-light btn-sm">← Back to Dashboard</a>
+</div>
+
+<div class="row g-3">
+  <div class="col-lg-5">
+    <div class="card shadow-sm stat-card">
+      <div class="card-body">
+        <h5 class="mb-3">Create New Cohort</h5>
+        <form method="post" class="row g-3">
+          <div class="col-12">
+            <label class="form-label">Course</label>
+            <select name="course" class="form-select" required>
+              <option value="" selected disabled>Choose…</option>
+              {% for c in courses %}
+              <option value="{{ c }}">{{ c }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-12">
+            <label class="form-label">Assign Marker</label>
+            <select name="marker_id" class="form-select" required>
+              <option value="" selected disabled>Choose a marker…</option>
+              {% for m in markers %}
+              <option value="{{ m.id }}">{{ m.username }} ({{ m.email }})</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-12">
+            <label class="form-label">Course Start Date</label>
+            <input type="date" name="start_date" class="form-control" required>
+          </div>
+          <div class="col-12">
+            <label class="form-label">Cohort Name <span class="text-muted">(optional)</span></label>
+            <input type="text" name="name" class="form-control" placeholder="e.g., FREC4 Sep 2025 AM">
+          </div>
+          <div class="col-12">
+            <button class="btn btn-success">Create Cohort & Generate Passcode</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-7">
+    <div class="card shadow-sm">
+      <div class="card-body">
+        <div class="d-flex align-items-center justify-content-between mb-2">
+          <h5 class="mb-0">Existing Cohorts</h5>
+        </div>
+
+        <div class="table-responsive">
+          <table class="table table-sm table-hover align-middle mb-0">
+            <thead class="table-light">
+              <tr>
+                <th>Name</th>
+                <th>Course</th>
+                <th>Marker</th>
+                <th>Start Date</th>
+                <th>Passcode</th>
+                <th>Status</th>
+                <th class="text-end">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for ch in cohorts %}
+              <tr>
+                <td class="fw-semibold">{{ ch.name or '—' }}</td>
+                <td>{{ ch.course }}</td>
+                <td>{{ marker_map.get(ch.marker_id).username if marker_map.get(ch.marker_id) else '—' }}</td>
+                <td>{{ ch.start_date.strftime('%d %b %Y') }}</td>
+                <td class="mono">{{ ch.passcode }}</td>
+                <td>
+                  {% if ch.active %}
+                    <span class="badge bg-success">Active</span>
+                  {% else %}
+                    <span class="badge bg-secondary">Inactive</span>
+                  {% endif %}
+                </td>
+                <td class="text-end">
+                  <form method="post" action="{{ url_for('admin_cohorts_toggle', cohort_id=ch.id) }}" class="d-inline">
+                    <button class="btn btn-sm btn-outline-{{ 'secondary' if ch.active else 'success' }}">
+                      {{ 'Deactivate' if ch.active else 'Activate' }}
+                    </button>
+                  </form>
+                  <form method="post" action="{{ url_for('admin_cohorts_regen', cohort_id=ch.id) }}" class="d-inline"
+                        onsubmit="return confirm('Generate a new passcode for this cohort? The old one will stop working.');">
+                    <button class="btn btn-sm btn-outline-primary">New Passcode</button>
+                  </form>
+                </td>
+              </tr>
+              {% endfor %}
+              {% if cohorts|length == 0 %}
+              <tr>
+                <td colspan="7" class="text-center text-muted py-4">No cohorts yet. Create one on the left.</td>
+              </tr>
+              {% endif %}
+            </tbody>
+          </table>
+        </div>
+
+        <div class="small text-muted mt-2">
+          Tip: Share the passcode with students. When they register, they can enter it to be enrolled in the correct course and assigned to the right marker automatically.
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
