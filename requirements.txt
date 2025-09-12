@@ -23,7 +23,8 @@ alembic==1.13.3
 python-dotenv==1.0.1
 
 # --- PDF merging / export ---
-PyPDF2==3.0.1
+reportlab>=4.2
+PyPDF2>=3.0
 
 # --- Time zones (needed for zoneinfo on some platforms like Render) ---
 tzdata==2025.1

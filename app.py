@@ -26,9 +26,13 @@ app = Flask(__name__)
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'your-secret-key')
 app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL', 'sqlite:///database.db')
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-app.config['UPLOAD_FOLDER'] = os.environ.get('UPLOAD_FOLDER', 'uploads')
 
-os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
+# Use Render persistent disk at /var/data
+PERSIST_ROOT = Path(os.environ.get("PERSIST_ROOT", "/var/data"))
+UPLOAD_DIR = PERSIST_ROOT / "uploads"
+
+UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+app.config['UPLOAD_FOLDER'] = str(UPLOAD_DIR)
 
 db = SQLAlchemy(app)
 login_manager = LoginManager(app)
