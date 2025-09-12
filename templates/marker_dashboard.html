@@ -1,228 +1,267 @@
-{% extends 'base.html' %}
-{% block title %}Marker · Dashboard{% endblock %}
+{% extends "base.html" %}
+{% block title %}Dashboard{% endblock %}
 
 {% block content %}
-<style>
-  .welcome { font-weight: 700; }
-  .mini { font-size:.85rem; color:#6c757d; }
-  .table-sm td, .table-sm th { padding:.5rem .75rem; }
-  .card h5 { font-weight:600; }
-  .chart-wrap { height:220px; } /* prevents canvas growth */
-</style>
-
 <div class="d-flex align-items-center justify-content-between mb-3">
   <div>
-    <h2 class="welcome mb-0">Welcome, {{ current_user.username|capitalize }}</h2>
-    <div class="text-muted small">Your assigned students and current marking workload.</div>
+    <h2 class="mb-0">Welcome, {{ current_user.username }} 👋</h2>
+    <p class="text-muted mb-0">Your marking overview and upcoming deadlines</p>
   </div>
-  <a href="{{ url_for('marker_students') }}" class="btn btn-outline-secondary btn-sm">View My Students</a>
 </div>
 
+<!-- Top row: Donut + Quick stats -->
 <div class="row g-3">
-  <!-- Donut: Workbooks Outstanding -->
   <div class="col-12 col-lg-5">
     <div class="card shadow-sm h-100">
-      <div class="card-body">
-        <h5 class="mb-2">Workbooks Outstanding</h5>
-        <div class="chart-wrap">
-          <canvas id="markerDonut"></canvas>
+      <div class="card-header">
+        <h5 class="mb-0">Workload Overview</h5>
+      </div>
+      <div class="card-body d-flex flex-column justify-content-center align-items-center">
+        <div class="donut-wrap">
+          <canvas id="workloadDonut" width="280" height="280" aria-label="Workload donut"></canvas>
+          <div class="donut-center">
+            <div class="center-label">Workbook Overview</div>
+          </div>
         </div>
-        <div class="mini mt-2">
-          <span class="me-3">Unsubmitted: <strong>{{ donut_data.unsubmitted }}</strong></span>
-          <span class="me-3">To be Marked: <strong>{{ donut_data.to_mark }}</strong></span>
-          <span>Marked: <strong>{{ donut_data.marked }}</strong></span>
+        <div class="mt-3 w-100">
+          <div class="d-flex flex-wrap gap-3 justify-content-center small">
+            <span class="legend-dot legend-unsubmitted"></span> Unsubmitted ({{ donut_data.unsubmitted }})
+            <span class="legend-dot legend-tomark"></span> To Mark ({{ donut_data.to_mark }})
+            <span class="legend-dot legend-marked"></span> Marked ({{ donut_data.marked }})
+          </div>
         </div>
       </div>
     </div>
   </div>
 
-  <!-- Cohort overview (grouped & summarized) -->
+  <!-- Needs Marking (soonest first) -->
   <div class="col-12 col-lg-7">
     <div class="card shadow-sm h-100">
-      <div class="card-body">
-        <h5 class="mb-2">Cohort Overview</h5>
-        <div class="table-responsive">
-          <table class="table table-sm table-hover align-middle mb-0">
-            <thead class="table-light">
-              <tr>
-                <th>Cohort</th>
-                <th>Course</th>
-                <th class="text-center">Students</th>
-                <th class="text-center">Total Slots</th>
-                <th class="text-center">Unsubmitted</th>
-                <th class="text-center">To Mark</th>
-                <th class="text-center">Marked</th>
-              </tr>
-            </thead>
-            <tbody>
-              {# Sort by cohort name first so groupby works reliably #}
-              {% for cohort_name, items in (students_overview
-                                            | sort(attribute='student.cohort.name')
-                                            | groupby('student.cohort.name')) %}
-                {% set cname = cohort_name if cohort_name is not none else 'Unassigned' %}
-                {% set first = items.list[0] if items.list|length > 0 else None %}
-                {% set course_name = (first.student.course if first else '—') %}
-                {% set student_count = items.list|length %}
-                {% set total_required = items.list|sum(attribute='required') %}
-                {% set total_unsubmitted = items.list|sum(attribute='unsubmitted') %}
-                {% set total_to_mark = items.list|sum(attribute='to_mark') %}
-                {% set total_marked = items.list|sum(attribute='marked') %}
-
-                <tr>
-                  <td class="fw-semibold">{{ cname }}</td>
-                  <td>{{ course_name or '—' }}</td>
-                  <td class="text-center">{{ student_count }}</td>
-                  <td class="text-center">{{ total_required }}</td>
-                  <td class="text-center">{{ total_unsubmitted }}</td>
-                  <td class="text-center">
-                    {% if total_to_mark > 0 %}
-                      <span class="badge bg-warning text-dark">{{ total_to_mark }}</span>
-                    {% else %}
-                      <span class="text-muted">0</span>
-                    {% endif %}
-                  </td>
-                  <td class="text-center">{{ total_marked }}</td>
-                </tr>
-              {% else %}
-                <tr>
-                  <td colspan="7" class="text-center text-muted py-4">No assigned students yet.</td>
-                </tr>
-              {% endfor %}
-            </tbody>
-          </table>
-        </div>
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <h5 class="mb-0">Needs Marking (soonest first)</h5>
+        <small class="text-muted">Ordered by time remaining</small>
       </div>
-    </div>
-  </div>
-
-  <!-- Recent activity (filtered to your students) -->
-  <div class="col-12">
-    <div class="card shadow-sm">
-      <div class="card-body">
-        <div class="d-flex align-items-center justify-content-between mb-2">
-          <h5 class="mb-0">Recent Submissions</h5>
-          <div class="mini">Latest 10 by your students</div>
-        </div>
-        <div class="table-responsive">
-          <table class="table table-sm table-hover align-middle mb-0">
-            <thead class="table-light">
-              <tr>
-                <th>Student</th>
-                <th>Workbook</th>
-                <th>Status</th>
-                <th>When</th>
-                <th class="text-end">Open</th>
-              </tr>
-            </thead>
-            <tbody>
-              {% for s in recent_submissions %}
-                {% if users.get(s.student_id) %}
-                <tr>
-                  <td class="fw-semibold">{{ users[s.student_id].username }}</td>
-                  <td>WB {{ s.workbook_number }}</td>
-                  <td>
-                    {% if s.marked %}
-                      <span class="badge bg-success">Marked</span>
-                    {% else %}
-                      {% if s.corrected_submission_path %}
-                        <span class="badge bg-warning text-dark">Reupload · To Mark</span>
-                      {% else %}
-                        <span class="badge bg-warning text-dark">Submitted · To Mark</span>
-                      {% endif %}
-                    {% endif %}
-                  </td>
-                  <td>
-                    <span title="{{ s.submission_time }}">{{ s.submission_time.strftime('%Y-%m-%d %H:%M') }}</span>
-                  </td>
-                  <td class="text-end">
-                    <a href="{{ url_for('marker_view_student', student_id=s.student_id) }}" class="btn btn-sm btn-outline-secondary">Open Student</a>
-                  </td>
-                </tr>
-                {% endif %}
-              {% endfor %}
-              {% if recent_submissions|length == 0 %}
-              <tr>
-                <td colspan="5" class="text-center text-muted py-4">No recent submissions.</td>
-              </tr>
-              {% endif %}
-            </tbody>
-          </table>
-        </div>
+      <div class="card-body p-0">
+        {% if to_mark_list and to_mark_list|length > 0 %}
+          <ul class="list-group list-group-flush">
+            {% for it in to_mark_list %}
+              <li class="list-group-item d-flex align-items-center justify-content-between">
+                <div class="me-3">
+                  <div class="fw-semibold">
+                    {{ it.student.username }} &middot; WB{{ it.wb }}
+                  </div>
+                  <div class="small text-muted">
+                    Submitted {{ it.submission.submission_time.strftime('%Y-%m-%d %H:%M') }}
+                    &middot; Deadline {{ it.deadline.strftime('%Y-%m-%d %H:%M') }}
+                  </div>
+                </div>
+                <div class="d-flex align-items-center gap-2 flex-wrap">
+                  {% set danger = (it.overdue or (it.days < 1 and it.hours <= 6)) %}
+                  {% set warn = (not danger and it.days < 2) %}
+                  {% if it.overdue %}
+                    <span class="badge rounded-pill bg-danger">Overdue by {{ it.days }}d {{ it.hours }}h</span>
+                  {% elif danger %}
+                    <span class="badge rounded-pill bg-danger">Due in {{ it.days }}d {{ it.hours }}h</span>
+                  {% elif warn %}
+                    <span class="badge rounded-pill bg-warning text-dark">Due in {{ it.days }}d {{ it.hours }}h</span>
+                  {% else %}
+                    <span class="badge rounded-pill bg-success">Due in {{ it.days }}d {{ it.hours }}h</span>
+                  {% endif %}
+                  <a class="btn btn-sm btn-primary"
+                     href="{{ url_for('mark_workbook_questions', submission_id=it.submission.id) }}">
+                    Open
+                  </a>
+                  <a class="btn btn-sm btn-outline-secondary"
+                     href="{{ url_for('marker_view_student', student_id=it.student.id) }}">
+                    Student
+                  </a>
+                </div>
+              </li>
+            {% endfor %}
+          </ul>
+        {% else %}
+          <div class="p-4 text-center text-muted">No unmarked submissions 🎉</div>
+        {% endif %}
       </div>
     </div>
   </div>
 </div>
 
-<!-- Build cohort breakdown object for donut tooltips -->
-{% set _groups = students_overview | sort(attribute='student.cohort.name') | groupby('student.cohort.name') %}
-<script>
-  // Cohort breakdown per segment (computed server-side via Jinja)
-  const donutBreakdown = {
-    "Unsubmitted": {
-      {% for cname, items in _groups %}
-        "{{ cname if cname is not none else 'Unassigned' }}": {{ items.list | sum(attribute='unsubmitted') }}{{ "," if not loop.last }}
-      {% endfor %}
-    },
-    "To be Marked": {
-      {% for cname, items in _groups %}
-        "{{ cname if cname is not none else 'Unassigned' }}": {{ items.list | sum(attribute='to_mark') }}{{ "," if not loop.last }}
-      {% endfor %}
-    },
-    "Marked": {
-      {% for cname, items in _groups %}
-        "{{ cname if cname is not none else 'Unassigned' }}": {{ items.list | sum(attribute='marked') }}{{ "," if not loop.last }}
-      {% endfor %}
-    }
-  };
-</script>
+<!-- Cohort summaries -->
+<div class="card shadow-sm mt-3">
+  <div class="card-header">
+    <h5 class="mb-0">Students by Cohort</h5>
+  </div>
+  <div class="card-body p-0">
+    {% if students_overview and students_overview|length > 0 %}
+      <!-- We’ll sort by cohort name; handle None safely -->
+      <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0">
+          <thead class="table-light">
+            <tr>
+              <th style="min-width: 180px;">Cohort</th>
+              <th style="min-width: 180px;">Student</th>
+              <th class="text-center">Unsubmitted</th>
+              <th class="text-center">To Mark</th>
+              <th class="text-center">Marked</th>
+              <th class="text-center">Total</th>
+              <th class="text-end" style="min-width: 140px;">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+          {# group-by-like rendering: loop twice, first determine ordered cohort keys #}
+          {% set rows = students_overview|sort(attribute='student.cohort.name') %}
+          {% set current = None %}
+          {% for r in rows %}
+            {% set coh = r.student.cohort.name if r.student.cohort else '—' %}
+            {% if coh != current %}
+              {% if not loop.first %}
+                <tr class="table-group-divider"><td colspan="7"></td></tr>
+              {% endif %}
+              <tr class="table-secondary">
+                <td colspan="7" class="fw-semibold">{{ coh }}</td>
+              </tr>
+              {% set current = coh %}
+            {% endif %}
+            <tr>
+              <td class="text-muted">{{ coh }}</td>
+              <td class="fw-semibold">{{ r.student.username }}</td>
+              <td class="text-center">
+                <span class="badge bg-secondary">{{ r.unsubmitted }}</span>
+              </td>
+              <td class="text-center">
+                <span class="badge bg-warning text-dark">{{ r.to_mark }}</span>
+              </td>
+              <td class="text-center">
+                <span class="badge bg-success">{{ r.marked }}</span>
+              </td>
+              <td class="text-center">{{ r.required }}</td>
+              <td class="text-end">
+                <a class="btn btn-sm btn-outline-primary"
+                   href="{{ url_for('marker_view_student', student_id=r.student.id) }}">
+                  View
+                </a>
+              </td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% else %}
+      <div class="p-4 text-center text-muted">No assigned students.</div>
+    {% endif %}
+  </div>
+</div>
 
 <!-- Chart.js -->
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1"></script>
 <script>
 (function(){
-  const el = document.getElementById('markerDonut');
-  if (!el) return;
+  const ctx = document.getElementById('workloadDonut');
+  if(!ctx) return;
 
-  const data = {
-    labels: ['Unsubmitted', 'To be Marked', 'Marked'],
-    datasets: [{
-      data: [{{ donut_data.unsubmitted }}, {{ donut_data.to_mark }}, {{ donut_data.marked }}]
-    }]
-  };
+  // Brand-aligned colors
+  const cUnsubmitted = 'rgba(108, 117, 125, 0.85)'; // secondary grey
+  const cToMark     = 'rgba(255, 193, 7, 0.9)';     // warning amber
+  const cMarked     = 'rgba(76, 175, 80, 0.9)';     // NWMS green
 
-  new Chart(el, {
+  const donut = new Chart(ctx, {
     type: 'doughnut',
-    data,
+    data: {
+      labels: ['Unsubmitted', 'To Mark', 'Marked'],
+      datasets: [{
+        data: [
+          {{ donut_data.unsubmitted|default(0) }},
+          {{ donut_data.to_mark|default(0) }},
+          {{ donut_data.marked|default(0) }}
+        ],
+        backgroundColor: [cUnsubmitted, cToMark, cMarked],
+        borderWidth: 0
+      }]
+    },
     options: {
       responsive: true,
-      maintainAspectRatio: true,
-      cutout: '60%',
-      animation: { duration: 600, easing: 'easeOutQuart' },
+      maintainAspectRatio: false,
+      cutout: '68%',
       plugins: {
-        legend: { position: 'bottom' },
+        legend: { display: false },
         tooltip: {
           callbacks: {
-            label: function(ctx){
-              const total = {{ donut_data.total }};
-              const v = ctx.parsed;
-              const pct = total ? Math.round((v/total)*100) : 0;
+            label: (ctx) => {
+              const v = ctx.parsed || 0;
+              const total = {{ donut_data.total|default(0) }};
+              const pct = total ? Math.round((v / total) * 100) : 0;
               return `${ctx.label}: ${v} (${pct}%)`;
-            },
-            afterBody: function(ctx){
-              // Add cohort breakdown under the main label
-              if (!ctx.length) return;
-              const label = ctx[0].label;
-              const breakdown = donutBreakdown[label] || {};
-              const entries = Object.entries(breakdown).filter(([k, val]) => val > 0);
-              if (!entries.length) return;
-              // Return an array of strings to become lines in the tooltip body
-              return entries.map(([k, val]) => `• ${k}: ${val}`);
             }
           }
         }
+      },
+      animation: {
+        animateRotate: true,
+        animateScale: true,
+        duration: 900,
+        easing: 'easeOutQuart'
       }
     }
   });
+
+  // Hover total in center
+  const center = document.querySelector('.donut-center');
+  if (center) {
+    const total = {{ donut_data.total|default(0) }};
+    center.querySelector('.center-number').textContent = total;
+  }
 })();
 </script>
+
+<style>
+/* Centered donut container */
+.donut-wrap{
+  position: relative;
+  width: 280px;
+  height: 280px;
+}
+.donut-wrap canvas{
+  width: 100% !important;
+  height: 100% !important;
+}
+.donut-center{
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  text-align: center;
+  pointer-events: none;
+}
+.center-number{
+  font-size: 1.75rem;
+  font-weight: 800;
+  line-height: 1;
+  color: #2E7D32; /* deep green */
+}
+.center-label{
+  font-size: .8rem;
+  color: #6c757d;
+  margin-top: .25rem;
+}
+
+/* Legends (inline dots) */
+.legend-dot{
+  display:inline-block;
+  width: 10px; height:10px;
+  border-radius: 50%;
+  margin-right: .35rem;
+  position: relative; top: 1px;
+}
+.legend-unsubmitted{ background: rgba(108,117,125,.85); }
+.legend-tomark{ background: rgba(255,193,7,.9); }
+.legend-marked{ background: rgba(76,175,80,.9); }
+
+/* Tighten list */
+.list-group-item{ padding-top: .7rem; padding-bottom: .7rem; }
+
+/* Make cards feel airy but consistent with brand */
+.card{ border-radius: 12px; }
+.card-header{ background: #fff; }
+</style>
 {% endblock %}

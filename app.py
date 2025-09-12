@@ -697,30 +697,26 @@ def marker_dashboard():
     if current_user.role != 'marker':
         return redirect(url_for('login'))
 
+    # Students assigned to this marker
     assigned_student_ids = [a.student_id for a in Assignment.query.filter_by(marker_id=current_user.id).all()]
-    if not assigned_student_ids:
-        donut_data = {"unsubmitted": 0, "to_mark": 0, "marked": 0, "total": 0}
-        return render_template('marker_dashboard.html',
-                               donut_data=donut_data,
-                               students_overview=[],
-                               recent_submissions=[],
-                               users={})
 
     students = (User.query
                 .filter(User.role == 'student', User.id.in_(assigned_student_ids))
-                .order_by(User.username.asc()).all())
+                .order_by(User.username.asc())
+                .all())
+    users_map = {u.id: u for u in students}
 
+    # ---------- Donut / workload ----------
     total_unsubmitted = 0
     total_to_mark = 0
     total_marked = 0
-
     overview_rows = []
+
     for s in students:
         required = COURSE_WORKBOOKS.get((s.course or '').upper(), 3)
         s_unsubmitted = required
         s_to_mark = 0
         s_marked = 0
-
         for wb in range(1, required + 1):
             latest = (WorkbookSubmission.query
                       .filter_by(student_id=s.id, workbook_number=wb)
@@ -750,17 +746,56 @@ def marker_dashboard():
         "total": total_unsubmitted + total_to_mark + total_marked
     }
 
-    recent_submissions = (WorkbookSubmission.query
-                          .filter(WorkbookSubmission.student_id.in_(assigned_student_ids))
-                          .order_by(WorkbookSubmission.submission_time.desc())
-                          .limit(10).all())
-    users = {u.id: u for u in students}
+    # ---------- Needs marking list (ordered by least time remaining) ----------
+    def _time_left_fields(sub):
+        deadline = sub.submission_time + timedelta(days=MARKING_DEADLINE_DAYS)
+        delta = deadline - now_utc_naive()
+        seconds = int(delta.total_seconds())
+        overdue = seconds < 0
+        secs_abs = abs(seconds)
+        days = secs_abs // 86400
+        hours = (secs_abs % 86400) // 3600
+        return {
+            "deadline": deadline,
+            "seconds_left": seconds,   # negative means overdue
+            "overdue": overdue,
+            "days": days,
+            "hours": hours,
+        }
 
-    return render_template('marker_dashboard.html',
-                           donut_data=donut_data,
-                           students_overview=overview_rows,
-                           recent_submissions=recent_submissions,
-                           users=users)
+    # We care about unmarked items (initial or re-upload)
+    unmarked = (WorkbookSubmission.query
+                .filter(WorkbookSubmission.student_id.in_(assigned_student_ids),
+                        WorkbookSubmission.marked.is_(False))
+                .order_by(WorkbookSubmission.submission_time.desc())
+                .all())
+
+    to_mark_list = []
+    for sub in unmarked:
+        # Skip if we lost user map (shouldn't happen)
+        student = users_map.get(sub.student_id)
+        if not student:
+            continue
+        tlf = _time_left_fields(sub)
+        to_mark_list.append({
+            "submission": sub,
+            "student": student,
+            "wb": sub.workbook_number,
+            **tlf
+        })
+
+    # Least time remaining first → sort by seconds_left ascending (overdue first)
+    to_mark_list.sort(key=lambda x: x["seconds_left"])
+
+    # (Optional) cap list length for UI
+    to_mark_list = to_mark_list[:20]
+
+    return render_template(
+        'marker_dashboard.html',
+        donut_data=donut_data,
+        students_overview=overview_rows,
+        to_mark_list=to_mark_list,   # << use this in template
+    )
 
 @app.route('/marker_students')
 @login_required
