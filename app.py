@@ -28,63 +28,55 @@ import secrets
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'your-secret-key')
 
-# ---------- Detect environment ----------
-project_root = Path(__file__).resolve().parent
+# ---------- Database on Persistent Disk ----------
+env_db_url = os.getenv("DATABASE_URL", "").strip()
 is_render = bool(os.getenv("RENDER") or os.getenv("RENDER_SERVICE_ID"))
+project_root = Path(__file__).resolve().parent
 
-# ---------- Database on Persistent Disk (/var/data) ----------
-env_db_url = (os.getenv("DATABASE_URL") or "").strip()
-
-if is_render:
-    db_dir = Path("/var/data")                    # Render disk mount point
+if os.getenv("DATA_DIR"):
+    db_dir = Path(os.getenv("DATA_DIR"))
+elif is_render:
+    db_dir = Path(os.getenv("PERSIST_ROOT", "/var/data"))
 else:
-    db_dir = project_root / "data"                # local dev
+    db_dir = project_root / "data"
 db_dir.mkdir(parents=True, exist_ok=True)
-
 sqlite_path = db_dir / "database.db"
 
 if env_db_url and not env_db_url.lower().startswith("sqlite"):
-    app.config["SQLALCHEMY_DATABASE_URI"] = env_db_url   # e.g., Postgres
+    app.config["SQLALCHEMY_DATABASE_URI"] = env_db_url  # e.g., Postgres
 else:
     app.config["SQLALCHEMY_DATABASE_URI"] = f"sqlite:///{sqlite_path}"
     app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {"connect_args": {"check_same_thread": False}}
 
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-app.config['MAX_CONTENT_LENGTH'] = int(os.getenv('MAX_CONTENT_LENGTH', 10 * 1024 * 1024))  # 10 MB
+app.config['MAX_CONTENT_LENGTH'] = int(os.getenv('MAX_CONTENT_LENGTH', 10 * 1024 * 1024))  # 10 MB default
 
-# ---------- Durable storage roots (/var/data) ----------
-persist_root = Path("/var/data") if is_render else (project_root / "data")
-persist_root.mkdir(parents=True, exist_ok=True)
+# ---------- Uploads on Persistent Disk ----------
+if os.getenv("UPLOAD_ROOT"):
+    upload_root = Path(os.getenv("UPLOAD_ROOT"))
+elif is_render:
+    upload_root = Path(os.getenv("PERSIST_ROOT", "/var/data")) / "uploads"
+else:
+    upload_root = project_root / "uploads"
+upload_root.mkdir(parents=True, exist_ok=True)
+app.config['UPLOAD_FOLDER'] = str(upload_root)
 
-# Uploads (PDFs)
-upload_root = persist_root / "uploads"
-pdf_dir = upload_root / "pdfs"
+# Keep PDFs in a tidy subfolder
+pdf_dir = Path(app.config['UPLOAD_FOLDER']) / "pdfs"
 pdf_dir.mkdir(parents=True, exist_ok=True)
-app.config["UPLOAD_FOLDER"] = str(upload_root)
 
-# Activity logs
-LOGS_DIR = persist_root / "activity_logs"
+# ---------- Activity logs on Persistent Disk ----------
+if os.getenv("ACTIVITY_LOGS_DIR"):
+    LOGS_DIR = Path(os.getenv("ACTIVITY_LOGS_DIR"))
+elif is_render:
+    LOGS_DIR = Path(os.getenv("PERSIST_ROOT", "/var/data")) / "activity_logs"
+else:
+    LOGS_DIR = project_root / "activity_logs"
 LOGS_DIR.mkdir(parents=True, exist_ok=True)
 
 db = SQLAlchemy(app)
 login_manager = LoginManager(app)
 login_manager.login_view = 'login'
-
-# Boot info
-# Flask 3.x: before_first_request removed. Use a one-time guard in before_request.
-_boot_logged = False
-
-@app.before_request
-def _log_storage_locations_once():
-    global _boot_logged
-    if _boot_logged:
-        return
-    app.logger.info(f"[BOOT] DB URI: {app.config['SQLALCHEMY_DATABASE_URI']}")
-    app.logger.info(f"[BOOT] Uploads dir: {upload_root}")
-    app.logger.info(f"[BOOT] PDFs dir: {pdf_dir}")
-    app.logger.info(f"[BOOT] Logs dir: {LOGS_DIR}")
-    app.logger.info(f"[BOOT] Render? {is_render}")
-    _boot_logged = True
 
 # ===================================================
 # Constants
@@ -123,7 +115,8 @@ def _format_ts_human(ts_iso: str | None) -> str:
         return ts_iso
 
 def add_months(dt, months):
-    if not dt: return None
+    if not dt:
+        return None
     year = dt.year + (dt.month - 1 + months) // 12
     month = (dt.month - 1 + months) % 12 + 1
     from calendar import monthrange
@@ -134,7 +127,7 @@ def add_months(dt, months):
 # Helpers: storage
 # ===================================================
 def save_uploaded_pdf(file_storage, filename: str) -> str:
-    """Save into pdf_dir and return safe filename (DB stores filenames, not paths)."""
+    """Save into pdf_dir and return the safe filename (store filenames in DB)."""
     safe = secure_filename(filename)
     full_path = pdf_dir / safe
     file_storage.save(full_path)
@@ -996,7 +989,7 @@ def export_student_report(student_id):
         else:
             skipped_info.append(f"WB{wb}: no submission")
 
-        # 2) Feedback page (always append a summary page)
+        # 2) Feedback page
         if sub:
             fb_buf = _render_feedback_page(sub, student, wb)
         else:
@@ -1066,6 +1059,7 @@ def admin_dashboard():
                           .order_by(WorkbookSubmission.submission_time.desc())
                           .limit(8).all())
 
+    # Map users for the recent table if template expects it
     users = {u.id: u for u in User.query.all()}
 
     return render_template('admin_dashboard.html', students=students, markers=markers,
