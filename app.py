@@ -26,17 +26,41 @@ app = Flask(__name__)
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'your-secret-key')
 app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL', 'sqlite:///database.db')
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+app.config['MAX_CONTENT_LENGTH'] = int(os.getenv('MAX_CONTENT_LENGTH', 10 * 1024 * 1024))  # 10 MB default
 
-# Use Render persistent disk at /var/data
-PERSIST_ROOT = Path(os.environ.get("PERSIST_ROOT", "/var/data"))
-UPLOAD_DIR = PERSIST_ROOT / "uploads"
+# ---------- Storage selection ----------
+# Priority: explicit UPLOAD_ROOT -> Render persistent disk -> local ./uploads
+project_root = Path(__file__).resolve().parent
+is_render = bool(os.getenv("RENDER") or os.getenv("RENDER_SERVICE_ID"))
 
-UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
-app.config['UPLOAD_FOLDER'] = str(UPLOAD_DIR)
+if os.getenv("UPLOAD_ROOT"):
+    # explicit override (works for both dev & prod)
+    upload_root = Path(os.getenv("UPLOAD_ROOT"))
+elif is_render:
+    # production on Render: use persistent disk
+    upload_root = Path(os.getenv("PERSIST_ROOT", "/var/data")) / "uploads"
+else:
+    # local dev in PyCharm: keep files in repo folder
+    upload_root = project_root / "uploads"
+
+upload_root.mkdir(parents=True, exist_ok=True)
+app.config['UPLOAD_FOLDER'] = str(upload_root)
+
+# Optional: keep PDFs in a tidy subfolder
+pdf_dir = Path(app.config['UPLOAD_FOLDER']) / "pdfs"
+pdf_dir.mkdir(parents=True, exist_ok=True)
 
 db = SQLAlchemy(app)
 login_manager = LoginManager(app)
 login_manager.login_view = 'login'
+
+# ===== helper (use this when saving) =====
+def save_uploaded_pdf(file_storage, filename: str) -> str:
+    """Save a PDF to the correct env-specific upload folder and return the full path."""
+    safe = secure_filename(filename)
+    full_path = pdf_dir / safe
+    file_storage.save(full_path)
+    return str(full_path)
 
 # ===================================================
 # Constants
