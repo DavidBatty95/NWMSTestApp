@@ -1,6 +1,6 @@
 from flask import (
     Flask, render_template, redirect, url_for, request, flash,
-    send_from_directory, abort, send_file
+    send_from_directory, abort, send_file, jsonify
 )
 from flask_sqlalchemy import SQLAlchemy
 from flask_login import (
@@ -21,62 +21,104 @@ from pathlib import Path
 import os
 import json
 import secrets
+import traceback
 
 # ===================================================
-# App & Config
+# App & Core Config
 # ===================================================
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'your-secret-key')
 
-# ---------- Database on Persistent Disk ----------
-env_db_url = os.getenv("DATABASE_URL", "").strip()
-is_render = bool(os.getenv("RENDER") or os.getenv("RENDER_SERVICE_ID"))
+# ---------- Environment detection ----------
 project_root = Path(__file__).resolve().parent
+is_render = bool(os.getenv("RENDER") or os.getenv("RENDER_SERVICE_ID"))
 
-if os.getenv("DATA_DIR"):
-    db_dir = Path(os.getenv("DATA_DIR"))
-elif is_render:
-    db_dir = Path(os.getenv("PERSIST_ROOT", "/var/data"))
+# ---------- Database on Persistent Disk (/var/data) ----------
+env_db_url = (os.getenv("DATABASE_URL") or "").strip()
+
+if is_render:
+    db_dir = Path("/var/data")                    # Render persistent disk
 else:
-    db_dir = project_root / "data"
+    db_dir = project_root / "data"                # Local dev
 db_dir.mkdir(parents=True, exist_ok=True)
+
 sqlite_path = db_dir / "database.db"
 
 if env_db_url and not env_db_url.lower().startswith("sqlite"):
-    app.config["SQLALCHEMY_DATABASE_URI"] = env_db_url  # e.g., Postgres
+    app.config["SQLALCHEMY_DATABASE_URI"] = env_db_url   # e.g. Postgres on Render
 else:
     app.config["SQLALCHEMY_DATABASE_URI"] = f"sqlite:///{sqlite_path}"
+    # Needed for SQLite with threaded servers like gunicorn
     app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {"connect_args": {"check_same_thread": False}}
 
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['MAX_CONTENT_LENGTH'] = int(os.getenv('MAX_CONTENT_LENGTH', 10 * 1024 * 1024))  # 10 MB default
 
-# ---------- Uploads on Persistent Disk ----------
-if os.getenv("UPLOAD_ROOT"):
-    upload_root = Path(os.getenv("UPLOAD_ROOT"))
-elif is_render:
-    upload_root = Path(os.getenv("PERSIST_ROOT", "/var/data")) / "uploads"
-else:
-    upload_root = project_root / "uploads"
-upload_root.mkdir(parents=True, exist_ok=True)
-app.config['UPLOAD_FOLDER'] = str(upload_root)
+# ---------- Durable storage roots (/var/data or ./data) ----------
+persist_root = Path("/var/data") if is_render else (project_root / "data")
+persist_root.mkdir(parents=True, exist_ok=True)
 
-# Keep PDFs in a tidy subfolder
-pdf_dir = Path(app.config['UPLOAD_FOLDER']) / "pdfs"
+# Uploads (PDFs)
+upload_root = persist_root / "uploads"
+pdf_dir = upload_root / "pdfs"
 pdf_dir.mkdir(parents=True, exist_ok=True)
+app.config["UPLOAD_FOLDER"] = str(upload_root)
 
-# ---------- Activity logs on Persistent Disk ----------
-if os.getenv("ACTIVITY_LOGS_DIR"):
-    LOGS_DIR = Path(os.getenv("ACTIVITY_LOGS_DIR"))
-elif is_render:
-    LOGS_DIR = Path(os.getenv("PERSIST_ROOT", "/var/data")) / "activity_logs"
-else:
-    LOGS_DIR = project_root / "activity_logs"
+# Activity logs
+LOGS_DIR = persist_root / "activity_logs"
 LOGS_DIR.mkdir(parents=True, exist_ok=True)
 
 db = SQLAlchemy(app)
 login_manager = LoginManager(app)
 login_manager.login_view = 'login'
+
+# ---------- One-time boot logger & DB initializer (Flask 3.x safe) ----------
+_boot_logged = False
+_db_initialized = False
+
+@app.before_request
+def _bootstrap_once():
+    """Log storage info once and ensure DB tables exist before any query."""
+    global _boot_logged, _db_initialized
+    if not _boot_logged:
+        app.logger.info(f"[BOOT] DB URI: {app.config.get('SQLALCHEMY_DATABASE_URI')}")
+        app.logger.info(f"[BOOT] Uploads dir: {upload_root}")
+        app.logger.info(f"[BOOT] PDFs dir: {pdf_dir}")
+        app.logger.info(f"[BOOT] Logs dir: {LOGS_DIR}")
+        app.logger.info(f"[BOOT] Render? {is_render}")
+        _boot_logged = True
+
+    if not _db_initialized:
+        try:
+            with app.app_context():
+                db.create_all()
+                ensure_sqlite_schema()
+            _db_initialized = True
+            app.logger.info("[BOOT] Database initialized / tables ensured.")
+        except Exception as e:
+            app.logger.error("DB initialization failed: %r", e)
+            # Let the normal error handler show a friendly 500; logs contain full trace.
+
+# ---------- Catch-all error handler for quick diagnosis ----------
+@app.errorhandler(Exception)
+def _catch_all(e):
+    app.logger.error("=== Unhandled exception ===")
+    app.logger.error("Path: %s", request.path)
+    app.logger.error("Error: %s", repr(e))
+    app.logger.error("Traceback:\n%s", traceback.format_exc())
+    return ("An unexpected error occurred. Check server logs for details.", 500)
+
+# ---------- Health endpoint ----------
+@app.get("/_health")
+def _health():
+    return jsonify({
+        "db_uri": app.config["SQLALCHEMY_DATABASE_URI"],
+        "uploads": str(upload_root.resolve()),
+        "pdfs": str(pdf_dir.resolve()),
+        "logs": str(LOGS_DIR.resolve()),
+        "render": is_render,
+        "time": datetime.now().isoformat()
+    })
 
 # ===================================================
 # Constants
@@ -115,8 +157,7 @@ def _format_ts_human(ts_iso: str | None) -> str:
         return ts_iso
 
 def add_months(dt, months):
-    if not dt:
-        return None
+    if not dt: return None
     year = dt.year + (dt.month - 1 + months) // 12
     month = (dt.month - 1 + months) % 12 + 1
     from calendar import monthrange
@@ -127,7 +168,7 @@ def add_months(dt, months):
 # Helpers: storage
 # ===================================================
 def save_uploaded_pdf(file_storage, filename: str) -> str:
-    """Save into pdf_dir and return the safe filename (store filenames in DB)."""
+    """Save into pdf_dir and return safe filename (DB stores filenames, not paths)."""
     safe = secure_filename(filename)
     full_path = pdf_dir / safe
     file_storage.save(full_path)
@@ -255,22 +296,20 @@ class Assignment(db.Model):
 # ===================================================
 from sqlalchemy.exc import OperationalError
 def ensure_sqlite_schema():
-    if not db.engine.url.get_backend_name().startswith('sqlite'):
-        return
-    with db.engine.connect() as conn:
-        try:
+    """Make best-effort ALTERs for SQLite to add newer columns if missing."""
+    try:
+        if not db.engine.url.get_backend_name().startswith('sqlite'):
+            return
+        with db.engine.connect() as conn:
             cols_ws = [row['name'] for row in conn.execute(text("PRAGMA table_info(workbook_submission)")).mappings()]
             if 'corrected_submission_time' not in cols_ws:
                 conn.execute(text("ALTER TABLE workbook_submission ADD COLUMN corrected_submission_time DATETIME"))
-        except OperationalError:
-            pass
-        try:
             cols_user = [row['name'] for row in conn.execute(text("PRAGMA table_info(user)")).mappings()]
             if 'cohort_id' not in cols_user:
                 conn.execute(text("ALTER TABLE user ADD COLUMN cohort_id INTEGER"))
-        except OperationalError:
-            pass
-        conn.commit()
+            conn.commit()
+    except Exception as e:
+        app.logger.warning("ensure_sqlite_schema() warning: %r", e)
 
 # ===================================================
 # Utility logic
@@ -646,6 +685,7 @@ def student_view_feedback(workbook_number):
 @app.route('/uploads/<path:filename>')
 @login_required
 def uploaded_file(filename):
+    # Serve from pdf_dir to prevent access outside
     return send_from_directory(pdf_dir, filename, as_attachment=False)
 
 # ===================================================
@@ -658,7 +698,17 @@ def marker_dashboard():
         return redirect(url_for('login'))
 
     assigned_student_ids = [a.student_id for a in Assignment.query.filter_by(marker_id=current_user.id).all()]
-    students = User.query.filter(User.role == 'student', User.id.in_(assigned_student_ids)).order_by(User.username.asc()).all()
+    if not assigned_student_ids:
+        donut_data = {"unsubmitted": 0, "to_mark": 0, "marked": 0, "total": 0}
+        return render_template('marker_dashboard.html',
+                               donut_data=donut_data,
+                               students_overview=[],
+                               recent_submissions=[],
+                               users={})
+
+    students = (User.query
+                .filter(User.role == 'student', User.id.in_(assigned_student_ids))
+                .order_by(User.username.asc()).all())
 
     total_unsubmitted = 0
     total_to_mark = 0
@@ -701,9 +751,10 @@ def marker_dashboard():
     }
 
     recent_submissions = (WorkbookSubmission.query
+                          .filter(WorkbookSubmission.student_id.in_(assigned_student_ids))
                           .order_by(WorkbookSubmission.submission_time.desc())
                           .limit(10).all())
-    users = {u.id: u for u in User.query.filter(User.id.in_(assigned_student_ids)).all()}
+    users = {u.id: u for u in students}
 
     return render_template('marker_dashboard.html',
                            donut_data=donut_data,
@@ -989,7 +1040,7 @@ def export_student_report(student_id):
         else:
             skipped_info.append(f"WB{wb}: no submission")
 
-        # 2) Feedback page
+        # 2) Feedback page (always append a summary page)
         if sub:
             fb_buf = _render_feedback_page(sub, student, wb)
         else:
@@ -1059,7 +1110,6 @@ def admin_dashboard():
                           .order_by(WorkbookSubmission.submission_time.desc())
                           .limit(8).all())
 
-    # Map users for the recent table if template expects it
     users = {u.id: u for u in User.query.all()}
 
     return render_template('admin_dashboard.html', students=students, markers=markers,
@@ -1398,9 +1448,10 @@ def contact():
                            contacts=contacts)
 
 # ===================================================
-# Main
+# Main (dev local only; Gunicorn/Render ignores this)
 # ===================================================
 if __name__ == '__main__':
+    # In local dev, ensure DB now
     with app.app_context():
         db.create_all()
         ensure_sqlite_schema()
