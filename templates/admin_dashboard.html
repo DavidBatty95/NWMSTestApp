@@ -2,220 +2,121 @@
 {% block title %}Admin · Dashboard{% endblock %}
 
 {% block content %}
-<style>
-  /* Compact cards */
-  .stat-card {
-    border-radius: 12px;
-    border: 1px solid #e9ecef;
-  }
-  .stat-value {
-    font-size: 1.6rem;
-    font-weight: 700;
-    line-height: 1;
-  }
-  .stat-label {
-    color: #6c757d;
-    font-size: .9rem;
-    margin-top: .2rem;
-  }
-
-  /* Donut sizing */
-  .donut-wrap {
-    display: flex; align-items: center; justify-content: center;
-    height: 260px; /* keeps it small */
-  }
-  .donut {
-    width: 220px;
-    height: 220px;
-  }
-  .legend-dot {
-    width: 10px; height: 10px; border-radius: 50%; display: inline-block; margin-right: .4rem;
-  }
-
-  /* Tables */
-  .table-sm td, .table-sm th { padding: .4rem .6rem; }
-
-  /* Section titles */
-  .section-title { font-size: 1.05rem; font-weight: 700; }
-
-  /* Subtle separators */
-  .card + .card { margin-top: 1rem; }
-</style>
-
 <div class="d-flex align-items-center justify-content-between mb-3">
   <div>
-    <h2 class="mb-0">Admin Dashboard</h2>
-    <div class="text-muted small">At-a-glance view of students, markers, and progress.</div>
-  </div>
-  <div class="d-flex gap-2">
-    <a href="{{ url_for('admin_assign') }}" class="btn btn-sm btn-outline-primary">Assign Students</a>
-    <a href="{{ url_for('admin_activity') }}" class="btn btn-sm btn-outline-secondary">Activity Logs</a>
+    <h2 class="mb-1">Admin Dashboard</h2>
+    <p class="text-muted mb-0">Overview of cohorts, students, and marking activity.</p>
   </div>
 </div>
 
-<!-- ===== Top KPIs ===== -->
 <div class="row g-3">
-  <div class="col-6 col-sm-4 col-lg-2">
-    <div class="card stat-card shadow-sm p-3">
-      <div class="stat-value">{{ students|length }}</div>
-      <div class="stat-label">Students</div>
-    </div>
-  </div>
-  <div class="col-6 col-sm-4 col-lg-2">
-    <div class="card stat-card shadow-sm p-3">
-      <div class="stat-value">{{ markers|length }}</div>
-      <div class="stat-label">Markers</div>
-    </div>
-  </div>
-
-  <div class="col-6 col-sm-4 col-lg-2">
-    <div class="card stat-card shadow-sm p-3">
-      <div class="stat-value">{{ status_counts['Unsubmitted'] or 0 }}</div>
-      <div class="stat-label">Unsubmitted</div>
-    </div>
-  </div>
-  <div class="col-6 col-sm-4 col-lg-2">
-    <div class="card stat-card shadow-sm p-3">
-      <div class="stat-value">{{ status_counts['Awaiting Marking'] or 0 }}</div>
-      <div class="stat-label">Awaiting Marking</div>
-    </div>
-  </div>
-  <div class="col-6 col-sm-4 col-lg-2">
-    <div class="card stat-card shadow-sm p-3">
-      <div class="stat-value">{{ status_counts['Referral'] or 0 }}</div>
-      <div class="stat-label">Referral</div>
-    </div>
-  </div>
-  <div class="col-6 col-sm-4 col-lg-2">
-    <div class="card stat-card shadow-sm p-3">
-      <div class="stat-value">{{ status_counts['Passed'] or 0 }}</div>
-      <div class="stat-label">Passed</div>
-    </div>
-  </div>
-</div>
-
-<!-- ===== Middle row: Donut + Workload ===== -->
-<div class="row g-3 mt-1">
-  <div class="col-lg-5">
-    <div class="card shadow-sm">
+  <!-- KPI cards -->
+  <div class="col-6 col-md-3">
+    <div class="card shadow-sm h-100">
       <div class="card-body">
-        <div class="d-flex align-items-center justify-content-between mb-2">
-          <div class="section-title mb-0">Student Status</div>
+        <div class="text-muted small">Students</div>
+        <div class="display-6 fw-semibold">{{ students|length }}</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card shadow-sm h-100">
+      <div class="card-body">
+        <div class="text-muted small">Markers</div>
+        <div class="display-6 fw-semibold">{{ markers|length }}</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-12 col-md-6">
+    <div class="card shadow-sm h-100">
+      <div class="card-body d-flex align-items-center justify-content-between">
+        <div>
+          <div class="text-muted small">Assignments</div>
+          <div class="h3 fw-semibold mb-0">{{ assignments|length }}</div>
         </div>
-
-        <!-- Donut -->
-        {% set unsubmitted = status_counts['Unsubmitted'] or 0 %}
-        {% set awaiting = status_counts['Awaiting Marking'] or 0 %}
-        {% set referral = status_counts['Referral'] or 0 %}
-        {% set passed = status_counts['Passed'] or 0 %}
-        {% set total = (unsubmitted + awaiting + referral + passed) %}
-        <div class="donut-wrap">
-          <svg viewBox="0 0 42 42" class="donut">
-            <!-- Track -->
-            <circle class="donut-ring" cx="21" cy="21" r="15.91549431"
-                    fill="transparent" stroke="#e9ecef" stroke-width="6"></circle>
-
-            {% if total > 0 %}
-              {# Compute cumulative percentages #}
-              {% set pct_unsubmitted = (unsubmitted / total * 100) | round(2) %}
-              {% set pct_awaiting = (awaiting / total * 100) | round(2) %}
-              {% set pct_referral = (referral / total * 100) | round(2) %}
-              {% set pct_passed = (passed / total * 100) | round(2) %}
-
-              {% set off_unsubmitted = 25 %}
-              {% set off_awaiting = 25 + pct_unsubmitted %}
-              {% set off_referral = 25 + pct_unsubmitted + pct_awaiting %}
-              {% set off_passed = 25 + pct_unsubmitted + pct_awaiting + pct_referral %}
-
-              <!-- Unsubmitted -->
-              {% if pct_unsubmitted > 0 %}
-              <circle cx="21" cy="21" r="15.91549431" fill="transparent"
-                      stroke="#adb5bd" stroke-width="6"
-                      stroke-dasharray="{{ pct_unsubmitted }} {{ 100 - pct_unsubmitted }}"
-                      stroke-dashoffset="{{ off_unsubmitted }}"></circle>
-              {% endif %}
-
-              <!-- Awaiting -->
-              {% if pct_awaiting > 0 %}
-              <circle cx="21" cy="21" r="15.91549431" fill="transparent"
-                      stroke="#ffc107" stroke-width="6"
-                      stroke-dasharray="{{ pct_awaiting }} {{ 100 - pct_awaiting }}"
-                      stroke-dashoffset="{{ off_awaiting }}"></circle>
-              {% endif %}
-
-              <!-- Referral -->
-              {% if pct_referral > 0 %}
-              <circle cx="21" cy="21" r="15.91549431" fill="transparent"
-                      stroke="#dc3545" stroke-width="6"
-                      stroke-dasharray="{{ pct_referral }} {{ 100 - pct_referral }}"
-                      stroke-dashoffset="{{ off_referral }}"></circle>
-              {% endif %}
-
-              <!-- Passed -->
-              {% if pct_passed > 0 %}
-              <circle cx="21" cy="21" r="15.91549431" fill="transparent"
-                      stroke="#198754" stroke-width="6"
-                      stroke-dasharray="{{ pct_passed }} {{ 100 - pct_passed }}"
-                      stroke-dashoffset="{{ off_passed }}"></circle>
-              {% endif %}
-            {% endif %}
-
-            <!-- Center label -->
-            <g class="chart-text">
-              <text x="50%" y="50%" alignment-baseline="middle" text-anchor="middle" font-size="6" fill="#212529">
-                {{ total }} Total
-              </text>
-            </g>
-          </svg>
-        </div>
-
-        <!-- Legend -->
-        <div class="row text-muted small">
-          <div class="col-6 mb-1">
-            <span class="legend-dot" style="background:#adb5bd;"></span> Unsubmitted: <strong>{{ unsubmitted }}</strong>
-          </div>
-          <div class="col-6 mb-1">
-            <span class="legend-dot" style="background:#ffc107;"></span> Awaiting: <strong>{{ awaiting }}</strong>
-          </div>
-          <div class="col-6">
-            <span class="legend-dot" style="background:#dc3545;"></span> Referral: <strong>{{ referral }}</strong>
-          </div>
-          <div class="col-6">
-            <span class="legend-dot" style="background:#198754;"></span> Passed: <strong>{{ passed }}</strong>
+        <div class="text-end">
+          <div class="small text-muted">Avg. students/marker</div>
+          {% set mcount = (markers|length) if (markers|length) > 0 else 1 %}
+          <div class="h4 fw-semibold mb-0">
+            {{ (assignments|length / mcount)|round(1) }}
           </div>
         </div>
       </div>
     </div>
   </div>
+</div>
 
-  <!-- Workload -->
-  <div class="col-lg-7">
-    <div class="card shadow-sm">
+<!-- Status donut + Legend -->
+<div class="row g-3 mt-1">
+  <div class="col-12 col-lg-6">
+    <div class="card shadow-sm h-100">
       <div class="card-body">
         <div class="d-flex align-items-center justify-content-between mb-2">
-          <div class="section-title mb-0">Workload by Marker</div>
-          <a href="{{ url_for('admin_assign') }}" class="btn btn-sm btn-outline-primary">Manage Assignments</a>
+          <h5 class="mb-0">Student Status</h5>
+        </div>
+        <div class="position-relative mx-auto" style="max-width: 420px;">
+          <canvas id="statusDonut" width="420" height="420" style="width:100%;height:auto;"></canvas>
+        </div>
+
+        <!-- Legend -->
+        <div class="d-flex flex-wrap gap-2 justify-content-center mt-3">
+          <!-- Colors must match the dataset below -->
+          <span class="badge rounded-pill legend-pill" style="background:#aeb4ba;">Unsubmitted</span>
+          <span class="badge rounded-pill legend-pill" style="background:#f6c453; color:#1f2328;">Awaiting Marking</span>
+          <span class="badge rounded-pill legend-pill" style="background:#e57373;">Referral</span>
+          <span class="badge rounded-pill legend-pill" style="background:#4caf50;">Passed</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Recent activity -->
+  <div class="col-12 col-lg-6">
+    <div class="card shadow-sm h-100">
+      <div class="card-body">
+        <div class="d-flex align-items-center justify-content-between mb-2">
+          <h5 class="mb-0">Recent Submissions</h5>
+          <a href="{{ url_for('admin_activity') }}" class="btn btn-sm btn-outline-secondary">Activity Log</a>
         </div>
         <div class="table-responsive">
-          <table class="table table-sm table-hover align-middle mb-0">
+          <table class="table table-sm align-middle mb-0">
             <thead class="table-light">
               <tr>
-                <th>Marker</th>
-                <th class="text-center">Assigned Students</th>
-                <th class="text-center">Email</th>
+                <th>Student</th>
+                <th class="text-center">WB</th>
+                <th>Submitted</th>
+                <th class="text-end">Status</th>
               </tr>
             </thead>
             <tbody>
-            {% for m in markers %}
+              {% for s in recent_submissions %}
+              {% set u = users.get(s.student_id) if users is defined else None %}
               <tr>
-                <td class="fw-semibold">{{ m.username }}</td>
-                <td class="text-center">{{ workload.get(m.id, 0) }}</td>
-                <td class="text-center"><a href="mailto:{{ m.email }}">{{ m.email }}</a></td>
+                <td>{{ (u.username if u else 'Student #' ~ s.student_id) }}</td>
+                <td class="text-center">#{{ s.workbook_number }}</td>
+                <td>
+                  <span title="{{ s.submission_time }}">
+                    {{ s.submission_time.strftime('%Y-%m-%d %H:%M') }}
+                  </span>
+                </td>
+                <td class="text-end">
+                  {% if not s.marked %}
+                    <span class="badge bg-warning text-dark">Awaiting Marking</span>
+                  {% elif s.is_referral %}
+                    <span class="badge bg-danger">Referral</span>
+                  {% elif s.score == 0 %}
+                    <span class="badge bg-dark">Failed</span>
+                  {% else %}
+                    <span class="badge bg-success">Passed</span>
+                  {% endif %}
+                </td>
               </tr>
-            {% endfor %}
-            {% if markers|length == 0 %}
-              <tr><td colspan="3" class="text-center text-muted py-3">No markers found.</td></tr>
-            {% endif %}
+              {% endfor %}
+              {% if recent_submissions|length == 0 %}
+              <tr>
+                <td colspan="4" class="text-center text-muted py-3">No recent submissions.</td>
+              </tr>
+              {% endif %}
             </tbody>
           </table>
         </div>
@@ -224,48 +125,108 @@
   </div>
 </div>
 
-<!-- ===== Optional: Recent submissions (auto-hides if empty) ===== -->
-{% set recent = [] %}
-{% for s in students %}
-  {% for sub in (s.workbooksubmission if false else []) %}{% endfor %}
-{% endfor %}
-{# If you want a real recent list, add a query in your route and pass "recent_submissions" #}
+<style>
+  .legend-pill{font-weight:600; letter-spacing:.2px;}
+</style>
 
-{% if recent_submissions is defined and recent_submissions %}
-  <div class="card shadow-sm mt-3">
-    <div class="card-body">
-      <div class="section-title mb-2">Recent Submissions</div>
-      <div class="table-responsive">
-        <table class="table table-sm table-hover align-middle mb-0">
-          <thead class="table-light">
-            <tr>
-              <th>Student</th>
-              <th>Workbook</th>
-              <th>Submitted</th>
-              <th>Status</th>
-            </tr>
-          </thead>
-          <tbody>
-            {% for sub in recent_submissions %}
-              <tr>
-                <td>{{ sub.student.username }}</td>
-                <td>WB#{{ sub.workbook_number }}</td>
-                <td>{{ sub.submission_time.strftime('%d %b %Y %H:%M') if sub.submission_time }}</td>
-                <td>
-                  {% if not sub.marked %}
-                    <span class="badge bg-warning text-dark">Awaiting Marking</span>
-                  {% elif sub.is_referral %}
-                    <span class="badge bg-danger">Referral</span>
-                  {% else %}
-                    <span class="badge bg-success">Marked</span>
-                  {% endif %}
-                </td>
-              </tr>
-            {% endfor %}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  </div>
-{% endif %}
+<!-- Chart.js -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+<script>
+(function(){
+  const dataCounts = {
+    unsubmitted: {{ status_counts["Unsubmitted"]|default(0) }},
+    awaiting:    {{ status_counts["Awaiting Marking"]|default(0) }},
+    referral:    {{ status_counts["Referral"]|default(0) }},
+    passed:      {{ status_counts["Passed"]|default(0) }}
+  };
+  const total = dataCounts.unsubmitted + dataCounts.awaiting + dataCounts.referral + dataCounts.passed;
+
+  // Brand-aligned palette (soft, professional)
+  const COLORS = {
+    unsubmitted: '#AEB4BA',   // muted grey
+    awaiting:    '#F6C453',   // warm amber
+    referral:    '#E57373',   // soft red
+    passed:      '#4CAF50'    // NWMS green
+  };
+
+  // Center label plugin
+  const centerLabel = {
+    id: 'centerLabel',
+    afterDraw(chart, args, opts){
+      const {ctx, chartArea: {width, height}} = chart;
+      const meta = chart.getDatasetMeta(0);
+      if (!meta || !meta.data || !meta.data.length) return;
+
+      ctx.save();
+      const x = chart.getDatasetMeta(0).data[0].x;
+      const y = chart.getDatasetMeta(0).data[0].y;
+
+      // Outer total
+      ctx.fillStyle = '#1f2328';
+      ctx.font = '700 22px system-ui, -apple-system, Segoe UI, Roboto, "Helvetica Neue", Arial';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(total.toString(), x, y - 4);
+
+      // Subtext
+      ctx.fillStyle = '#6c757d';
+      ctx.font = '500 11px system-ui, -apple-system, Segoe UI, Roboto, "Helvetica Neue", Arial';
+      ctx.fillText('Students', x, y + 14);
+
+      ctx.restore();
+    }
+  };
+
+  const ctx = document.getElementById('statusDonut').getContext('2d');
+  new Chart(ctx, {
+    type: 'doughnut',
+    data: {
+      labels: ['Unsubmitted', 'Awaiting Marking', 'Referral', 'Passed'],
+      datasets: [{
+        data: [
+          dataCounts.unsubmitted,
+          dataCounts.awaiting,
+          dataCounts.referral,
+          dataCounts.passed
+        ],
+        backgroundColor: [
+          COLORS.unsubmitted,
+          COLORS.awaiting,
+          COLORS.referral,
+          COLORS.passed
+        ],
+        borderWidth: 0,
+        hoverOffset: 8,
+        cutout: '64%'
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: true,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          backgroundColor: 'rgba(18,19,21,.92)',
+          padding: 10,
+          bodyFont: { weight: 600 },
+          displayColors: true,
+          callbacks: {
+            label: function(ctx){
+              const label = ctx.label || '';
+              const value = ctx.parsed || 0;
+              const pct = total ? Math.round((value / total) * 100) : 0;
+              return ` ${label}: ${value} (${pct}%)`;
+            }
+          }
+        }
+      },
+      animation: {
+        duration: 900,
+        easing: 'easeOutQuart'
+      }
+    },
+    plugins: [centerLabel]
+  });
+})();
+</script>
 {% endblock %}
