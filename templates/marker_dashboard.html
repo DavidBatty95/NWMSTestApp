@@ -2,10 +2,43 @@
 {% block title %}Marker · Dashboard{% endblock %}
 
 {% block content %}
-<div class="d-flex align-items-center justify-content-between mb-3">
+<style>
+  :root{
+    --ink:#1f2328; --muted:#6c757d; --border:#e9ecef;
+    --green:#4caf50; --amber:#f6c453; --red:#e57373; --grey:#aeb4ba;
+  }
+
+  .page-head{display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:.75rem}
+  .page-head h2{margin:0;font-weight:700}
+  .page-head p{margin:0;color:var(--muted)}
+
+  .card{border-radius:12px;border:1px solid var(--border)}
+  .card-header{background:#fff}
+
+  .legend-row{color:var(--muted);font-size:.9rem}
+  .legend-dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:.35rem;transform:translateY(-1px)}
+  .nowrap{white-space:nowrap}
+
+  /* Needs Attention */
+  .list-group-item{padding:.6rem .9rem}
+  .na-line{display:flex;gap:.75rem;align-items:center;flex-wrap:wrap}
+  .na-primary{font-weight:700}
+  .na-meta{color:var(--muted)}
+  .na-right{display:flex;align-items:center;gap:.5rem;margin-left:auto}
+
+  /* Cohorts table */
+  .table th,.table td{vertical-align:middle}
+  .table thead.sticky-top{position:sticky;top:0;z-index:1}
+  .badge{font-weight:600}
+
+  /* Donut container */
+  .donut-wrap{max-width:280px;margin:0 auto}
+</style>
+
+<div class="page-head">
   <div>
-    <h2 class="mb-0">Welcome, {{ current_user.username }} 👋</h2>
-    <p class="text-muted mb-0">Your marking overview and cohorts.</p>
+    <h2>Welcome, {{ current_user.username }}</h2>
+    <p class="text-muted">Your marking overview and cohorts.</p>
   </div>
 </div>
 
@@ -17,19 +50,21 @@
         <strong>Work Volume</strong>
       </div>
       <div class="card-body d-flex align-items-center justify-content-center">
-        <div class="w-100" style="max-width: 280px; margin: 0 auto;">
+        <div class="donut-wrap w-100">
           <canvas id="donutWorkload" width="280" height="280" aria-label="Workload donut"></canvas>
         </div>
       </div>
-      <div class="card-footer small">
-        <span class="badge bg-secondary me-1">Unsubmitted</span>
-        <span class="badge bg-warning text-dark me-1">To mark</span>
-        <span class="badge bg-success">Marked</span>
+      <div class="card-body pt-0">
+        <div class="legend-row d-flex flex-wrap gap-3 justify-content-center">
+          <span><i class="legend-dot" style="background:var(--grey)"></i>Unsubmitted</span>
+          <span><i class="legend-dot" style="background:var(--amber)"></i>To mark</span>
+          <span><i class="legend-dot" style="background:var(--green)"></i>Marked</span>
+        </div>
       </div>
     </div>
   </div>
 
-  <!-- Needs Attention (compact list) -->
+  <!-- Needs Attention -->
   <div class="col-12 col-lg-8">
     <div class="card shadow-sm h-100">
       <div class="card-header d-flex align-items-center justify-content-between">
@@ -40,30 +75,27 @@
         <div class="list-group list-group-flush">
           {% for sub in recent_submissions %}
             {% set st = users.get(sub.student_id) %}
-            <div class="list-group-item d-flex align-items-center justify-content-between">
-              <div class="d-flex flex-column flex-sm-row align-items-sm-center gap-2">
-                <div class="fw-semibold">{{ st.username if st else 'Student #' ~ sub.student_id }}</div>
-                <div class="text-muted small">WB {{ sub.workbook_number }}</div>
-                <div class="small text-muted">Submitted: {{ sub.submission_time.strftime('%d %b %Y %H:%M') }}</div>
-              </div>
-              <div class="d-flex align-items-center gap-2">
-                {% if not sub.marked %}
-                  <span class="badge bg-warning text-dark">Awaiting marking</span>
-                {% else %}
-                  {% if sub.is_referral %}
-                    <span class="badge bg-danger">Referral</span>
-                  {% elif sub.score == 0 %}
-                    <span class="badge bg-dark text-white">Failed</span>
+            <div class="list-group-item">
+              <div class="na-line">
+                <div class="na-primary">{{ st.username if st else 'Student #' ~ sub.student_id }}</div>
+                <div class="na-meta">WB {{ sub.workbook_number }}</div>
+                <div class="na-meta nowrap">Submitted: {{ sub.submission_time.strftime('%d %b %Y %H:%M') }}</div>
+                <div class="na-right">
+                  {% if not sub.marked %}
+                    <span class="badge bg-warning text-dark">Awaiting</span>
                   {% else %}
-                    <span class="badge bg-success">Marked</span>
+                    {% if sub.is_referral %}
+                      <span class="badge bg-danger">Referral</span>
+                    {% elif sub.score == 0 %}
+                      <span class="badge bg-dark text-white">Failed</span>
+                    {% else %}
+                      <span class="badge bg-success">Marked</span>
+                    {% endif %}
                   {% endif %}
-                {% endif %}
-                {% if st %}
-                  <a class="btn btn-sm btn-outline-primary"
-                     href="{{ url_for('marker_view_student', student_id=st.id) }}">
-                    View
-                  </a>
-                {% endif %}
+                  {% if st %}
+                    <a class="btn btn-sm btn-outline-primary" href="{{ url_for('marker_view_student', student_id=st.id) }}">Open</a>
+                  {% endif %}
+                </div>
               </div>
             </div>
           {% endfor %}
@@ -85,14 +117,14 @@
   {% set grouped = students_overview|groupby('student.cohort.name') %}
   {% for grp in grouped %}
     {% set cohort_name = grp.grouper if grp.grouper else 'Ungrouped' %}
+    {% set cu = grp.list | map(attribute='unsubmitted') | sum %}
+    {% set cm = grp.list | map(attribute='to_mark') | sum %}
+    {% set ck = grp.list | map(attribute='marked') | sum %}
+
     <div class="card shadow-sm mb-3">
       <div class="card-header d-flex align-items-center justify-content-between flex-wrap">
-        <div class="d-flex align-items-center gap-2">
+        <div class="d-flex align-items-center gap-2 flex-wrap">
           <strong>{{ cohort_name }}</strong>
-          <!-- Cohort totals -->
-          {% set cu = grp.list | map(attribute='unsubmitted') | sum %}
-          {% set cm = grp.list | map(attribute='to_mark') | sum %}
-          {% set ck = grp.list | map(attribute='marked') | sum %}
           <span class="badge bg-secondary">{{ cu }} Unsubmitted</span>
           <span class="badge bg-warning text-dark">{{ cm }} To mark</span>
           <span class="badge bg-success">{{ ck }} Marked</span>
@@ -101,9 +133,9 @@
       </div>
 
       <div class="table-responsive">
-        <table class="table table-hover align-middle mb-0">
-          <thead class="table-light">
-            <tr>
+        <table class="table table-sm table-hover align-middle mb-0">
+          <thead class="table-light sticky-top">
+            <tr class="small text-uppercase">
               <th>Student</th>
               <th class="text-center">Unsubmitted</th>
               <th class="text-center">To Mark</th>
@@ -115,19 +147,13 @@
             {% for row in grp.list %}
               {% set s = row.student %}
               <tr>
-                <td class="fw-semibold">
-                  {{ s.username }}
-                  <span class="text-muted small ms-1">({{ s.course or '—' }})</span>
+                <td>
+                  <div class="fw-semibold">{{ s.username }}</div>
+                  <div class="text-muted small">{{ s.course or '—' }} · <a href="mailto:{{ s.email }}">{{ s.email }}</a></div>
                 </td>
-                <td class="text-center">
-                  <span class="badge bg-secondary">{{ row.unsubmitted }}</span>
-                </td>
-                <td class="text-center">
-                  <span class="badge bg-warning text-dark">{{ row.to_mark }}</span>
-                </td>
-                <td class="text-center">
-                  <span class="badge bg-success">{{ row.marked }}</span>
-                </td>
+                <td class="text-center"><span class="badge bg-secondary">{{ row.unsubmitted }}</span></td>
+                <td class="text-center"><span class="badge bg-warning text-dark">{{ row.to_mark }}</span></td>
+                <td class="text-center"><span class="badge bg-success">{{ row.marked }}</span></td>
                 <td class="text-end">
                   <a class="btn btn-sm btn-outline-primary"
                      href="{{ url_for('marker_view_student', student_id=s.id) }}">
@@ -152,74 +178,64 @@
 </div>
 
 <!-- Chart.js -->
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
 <script>
-  (function(){
-    const ctx = document.getElementById('donutWorkload');
-    if(!ctx) return;
+(function(){
+  const el = document.getElementById('donutWorkload');
+  if(!el) return;
 
-    // Data from server
-    const data = {
-      labels: ['Unsubmitted', 'To mark', 'Marked'],
-      datasets: [{
-        data: [
-          {{ donut_data.unsubmitted|default(0) }},
-          {{ donut_data.to_mark|default(0) }},
-          {{ donut_data.marked|default(0) }}
-        ],
-        backgroundColor: [
-          '#6c757d',  // unsubmitted (secondary)
-          '#ffc107',  // to mark (warning)
-          '#28a745'   // marked (success)
-        ],
-        hoverOffset: 6,
-        borderColor: '#ffffff',
-        borderWidth: 2
+  const total = {{ donut_data.total|default(0) }};
+  const data = [ {{ donut_data.unsubmitted|default(0) }},
+                 {{ donut_data.to_mark|default(0) }},
+                 {{ donut_data.marked|default(0) }} ];
+
+  // Center total plugin
+  const centerLabel = {
+    id:'centerLabel',
+    afterDraw(chart){
+      const {ctx} = chart;
+      const meta = chart.getDatasetMeta(0);
+      const first = meta?.data?.find(d => d && d.x != null);
+      if(!first) return;
+      ctx.save();
+      ctx.textAlign='center'; ctx.textBaseline='middle';
+      ctx.fillStyle = '#1f2328';
+      ctx.font = '700 20px system-ui,-apple-system,Segoe UI,Roboto,Helvetica Neue,Arial';
+      ctx.fillText(String(total), first.x, first.y-3);
+      ctx.fillStyle = '#6c757d';
+      ctx.font = '500 11px system-ui,-apple-system,Segoe UI,Roboto,Helvetica Neue,Arial';
+      ctx.fillText('Items', first.x, first.y+13);
+      ctx.restore();
+    }
+  };
+
+  new Chart(el, {
+    type:'doughnut',
+    data:{
+      labels:['Unsubmitted','To mark','Marked'],
+      datasets:[{
+        data,
+        backgroundColor:['var(--grey)','var(--amber)','var(--green)'],
+        borderWidth:0,
+        hoverOffset:6,
+        cutout:'62%'
       }]
-    };
-
-    // Keep animation (gentle)
-    new Chart(ctx, {
-      type: 'doughnut',
-      data: data,
-      options: {
-        responsive: true,
-        maintainAspectRatio: true,
-        cutout: '62%',
-        plugins: {
-          legend: {
-            display: false
-          },
-          tooltip: {
-            callbacks: {
-              label: function(context){
-                const total = {{ donut_data.total|default(0) }};
-                const val = context.parsed;
-                const pct = total ? Math.round((val/total)*100) : 0;
-                return `${context.label}: ${val} (${pct}%)`;
-              }
-            }
+    },
+    options:{
+      responsive:true,
+      maintainAspectRatio:true,
+      plugins:{ legend:{display:false},
+        tooltip:{ callbacks:{
+          label: (ctx)=>{
+            const v = ctx.parsed || 0;
+            const pct = total ? Math.round((v/total)*100) : 0;
+            return ` ${ctx.label}: ${v} (${pct}%)`;
           }
-        },
-        animation: {
-          animateRotate: true,
-          animateScale: true,
-          duration: 950,
-          easing: 'easeOutQuart'
-        }
-      }
-    });
-  })();
+        }}},
+      animation:{duration:700,easing:'easeOutQuart'}
+    },
+    plugins:[centerLabel]
+  });
+})();
 </script>
-
-<style>
-  /* Tight, sleek table spacing */
-  .table td, .table th { vertical-align: middle; }
-
-  /* Make cohort header badges tidy */
-  .card-header .badge { font-weight: 600; }
-
-  /* Compact list group items */
-  .list-group-item { padding: .6rem .9rem; }
-</style>
 {% endblock %}
