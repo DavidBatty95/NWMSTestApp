@@ -148,7 +148,7 @@
           </li>
           <li class="nav-item">
             <a class="nav-link {{ 'active' if request.endpoint == 'admin_cohorts' else '' }}" href="{{ url_for('admin_cohorts') }}">
-              <span class="dot"></span> Cohorts/Classes
+              <span class="dot"></span> Cohorts Editor
             </a>
           </li>
           <li class="nav-item">
@@ -161,12 +161,21 @@
               <span class="dot"></span> Delete Markers
             </a>
           </li>
-            <!-- NEW: Settings -->
+          <!-- NEW: Settings -->
           <li class="nav-item">
             <a class="nav-link {{ 'active' if request.endpoint == 'admin_settings' else '' }}" href="{{ url_for('admin_settings') }}">
               <span class="dot"></span> Settings
             </a>
           </li>
+          <!-- NEW: Contextual Upload-on-behalf (visible when a student_id is in the current route) -->
+          {% if request.view_args and request.view_args.get('student_id') %}
+          <li class="nav-item">
+            <a class="nav-link {{ 'active' if request.endpoint == 'proxy_upload' else '' }}"
+               href="{{ url_for('proxy_upload', student_id=request.view_args.get('student_id')) }}">
+              <span class="dot"></span> Upload for Student
+            </a>
+          </li>
+          {% endif %}
 
         {% elif current_user.role == 'marker' %}
           <li class="nav-item">
@@ -179,6 +188,15 @@
               <span class="dot"></span> My Students
             </a>
           </li>
+          <!-- NEW: Contextual Upload-on-behalf (visible when viewing a specific student) -->
+          {% if request.view_args and request.view_args.get('student_id') %}
+          <li class="nav-item">
+            <a class="nav-link {{ 'active' if request.endpoint == 'proxy_upload' else '' }}"
+               href="{{ url_for('proxy_upload', student_id=request.view_args.get('student_id')) }}">
+              <span class="dot"></span> Upload for Student
+            </a>
+          </li>
+          {% endif %}
           <li class="nav-item">
             <a class="nav-link {{ 'active' if request.endpoint == 'contact' else '' }}" href="{{ url_for('contact') }}">
               <span class="dot"></span> Contact

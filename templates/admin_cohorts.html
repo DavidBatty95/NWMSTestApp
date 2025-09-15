@@ -10,7 +10,7 @@
 
 <div class="d-flex align-items-center justify-content-between mb-3">
   <div>
-    <h2 class="mb-0">Cohorts / Classes</h2>
+    <h2 class="mb-0">Cohorts Editor</h2>
     <div class="text-muted small">Create a class with course, marker, and start date. A passcode will be generated for student registration.</div>
   </div>
   <a href="{{ url_for('admin_dashboard') }}" class="btn btn-light btn-sm">← Back to Dashboard</a>
@@ -99,7 +99,7 @@
                   </form>
                   <form method="post" action="{{ url_for('admin_cohorts_regen', cohort_id=ch.id) }}" class="d-inline"
                         onsubmit="return confirm('Generate a new passcode for this cohort? The old one will stop working.');">
-                    <button class="btn btn-sm btn-outline-primary">New Passcode</button>
+                    <button class="btn btn-sm btn-outline-primary">Regenerate</button>
                   </form>
                 </td>
               </tr>

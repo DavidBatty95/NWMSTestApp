@@ -3,75 +3,88 @@
 
 {% block content %}
 <style>
-  /* Sticky top */
+  :root{
+    --soft-border:#e9ecef; --muted:#6c757d; --bg:#f6f7f9;
+  }
+  body { background: var(--bg); }
   .topbar {
-    position: sticky; top: -8px; z-index: 20;
-    background: #f5f6f7; padding: 10px 0 6px 0; margin-top: -10px;
+    position: sticky; top: -8px; z-index: 40;
+    background: #fff; padding: 10px 0 8px; margin-top: -10px;
+    border-bottom: 1px solid var(--soft-border);
   }
-  .meta-line { font-size: .9rem; color: #6c757d; }
+  .meta-line { font-size:.9rem; color: var(--muted); }
 
-  /* Left PDF panel */
-  .pdf-wrap { border: 1px solid #e9ecef; border-radius: 12px; background: #fff; }
-  .pdf-view {
-    width: 100%; height: calc(100vh - 220px);
-    border: none; border-radius: 12px;
-  }
+  /* Left (PDF) */
+  .pdf-wrap { border:1px solid var(--soft-border); border-radius: 12px; background:#fff; }
+  .pdf-view { width:100%; height: calc(100vh - 260px); border:none; border-radius: 12px; }
   @media (max-width: 991.98px) { .pdf-view { height: 60vh; } }
 
-  /* Right panel scrolls independently */
-  .right-scroll {
-    max-height: calc(100vh - 220px);
-    overflow-y: auto;
-    padding-right: 4px;
-  }
-  @media (max-width: 991.98px) { .right-scroll { max-height: none; } }
+  /* Right (Questions) — height will be synced to .pdf-view via JS */
+  .right-scroll { overflow-y: auto; padding-right: 4px; }
+  @media (max-width: 991.98px) { .right-scroll { max-height: none !important; } }
 
-  /* Single panel for all questions */
-  .qpanel { border: 1px solid #e9ecef; border-radius: 12px; background: #fff; }
-  .qpanel-header { padding: 14px 14px 8px; border-bottom: 1px solid #eef1f4; }
-  .qpanel-body { padding: 8px 0; }
+  .controls { display:flex; gap:.5rem; flex-wrap: wrap; align-items:center; }
+  .progress { height: 8px; }
+
+  .qpanel { border:1px solid var(--soft-border); border-radius:12px; background:#fff; }
+  .qpanel-header { padding: 12px 14px; border-bottom:1px solid #eef1f4; }
+  .qpanel-body { padding: 0; }
   .qrow {
-    display: grid;
-    grid-template-columns: auto 1fr auto;
-    gap: .75rem;
-    align-items: center;
-    padding: 10px 14px;
+    display:grid; grid-template-columns: auto 1fr auto; gap:.75rem; align-items:start;
+    padding: 10px 14px; transition: background-color .15s ease, box-shadow .15s ease;
   }
-  .qrow + .qrow { border-top: 1px solid #f0f2f5; }
+  .qrow + .qrow { border-top:1px solid #f1f3f5; }
+  .qrow.is-open:hover { background:#fafbfc; }
+  .qrow.is-locked { opacity:.72; }
 
-  .qcol-left {
-    display:flex; flex-direction:column; align-items:center; gap:.25rem; min-width:52px;
-  }
+  .qcol-left { display:flex; flex-direction:column; align-items:center; gap:.25rem; min-width:56px; }
   .qbadge { font-weight:700; }
   .prev-badge { font-size:.72rem; }
 
   .mark-feedback textarea { min-height: 44px; resize: vertical; }
+  .mark-toggle { display:flex; gap:.4rem; align-items:center; }
 
-  .mark-toggle { display:flex; gap:.5rem; align-items:center; }
-
-  /* Feedback highlight */
-  .fbx { transition: border-color .2s ease, background-color .2s ease; }
-  .fbx-pass  { border-color:#198754 !important; background:#eef8f0 !important; }
-  .fbx-refer { border-color:#dc3545 !important; background:#fdeeee !important; }
-  .fbx-fail  { border-color:#dc3545 !important; background:#fdeeee !important; }
+  .fbx { transition: border-color .15s ease, background-color .15s ease, box-shadow .15s ease; }
+  .fbx-pass  { border-color:#198754 !important; background:#eef8f0 !important; box-shadow: 0 0 0 .15rem rgba(25,135,84,.12); }
+  .fbx-refer { border-color:#dc3545 !important; background:#fdeeee !important; box-shadow: 0 0 0 .15rem rgba(220,53,69,.12); }
+  .fbx-fail  { border-color:#dc3545 !important; background:#fdeeee !important; box-shadow: 0 0 0 .15rem rgba(220,53,69,.12); }
   .fbx[disabled] { background:#f1f3f5 !important; }
+
+  .btn-xs { --bs-btn-padding-y:.175rem; --bs-btn-padding-x:.4rem; --bs-btn-font-size:.75rem; }
+  .kbd { background:#eee; border-radius:4px; padding:.05rem .35rem; border:1px solid #ddd; font-size:.8em; }
 </style>
 
-<!-- Top bar -->
-<div class="topbar d-flex align-items-center justify-content-between">
-  <div class="d-flex align-items-center gap-2">
-    <div>
-      <div class="fw-semibold">Marking: {{ student.username }} — Workbook {{ wb_number }}</div>
-      <div class="meta-line">
-        Attempt {{ (submission.referral_count or 0) + 1 }}
-        {% if final_attempt %} · <span class="text-danger fw-semibold">Final Attempt</span>{% endif %}
-        {% if not is_first_attempt %} · Only previously referred questions are open{% endif %}
+<!-- Sticky topbar (the only Submit) -->
+<div class="topbar">
+  <div class="container-fluid">
+    <div class="d-flex align-items-center justify-content-between">
+      <div>
+        <div class="fw-semibold">Marking: {{ student.username }} — Workbook {{ wb_number }}</div>
+        <div class="meta-line">
+          Attempt {{ (submission.referral_count or 0) + 1 }}
+          {% if final_attempt %} · <span class="text-danger fw-semibold">Final Attempt</span>{% endif %}
+          {% if not is_first_attempt %} · Only previously referred questions are open{% endif %}
+        </div>
+      </div>
+
+      <div class="d-flex align-items-center gap-2">
+        <div class="text-end me-2" style="min-width:220px">
+          <div class="small text-muted mb-1">
+            Progress: <span id="progCount">0</span>/<span id="progTotal">{{ rows|length }}</span>
+          </div>
+          <div class="progress">
+            <div id="progBar" class="progress-bar bg-success" role="progressbar" style="width:0%"></div>
+          </div>
+        </div>
+
+        <button id="btnNextOpen" class="btn btn-outline-primary btn-sm" type="button" title="Jump to next open question (↓)">
+          Next Open
+        </button>
+        <a href="{{ url_for('marker_view_student', student_id=student.id) }}" class="btn btn-light btn-sm">← Back to Student</a>
+        <!-- Single submit button -->
+        <button form="markForm" class="btn btn-success btn-sm">Submit Mark</button>
       </div>
     </div>
-  </div>
-  <div class="d-flex align-items-center gap-2">
-    <a href="{{ url_for('marker_view_student', student_id=student.id) }}" class="btn btn-light btn-sm">← Back to Student</a>
-    <button form="markForm" class="btn btn-success btn-sm">Submit Mark</button>
   </div>
 </div>
 
@@ -84,17 +97,24 @@
 <div class="row g-3">
   <!-- Left: PDF viewer -->
   <div class="col-lg-6">
-    <div class="card shadow-sm">
-      <div class="card-body">
+    <div class="card shadow-sm h-100">
+      <div class="card-body d-flex flex-column">
         <div class="d-flex align-items-center justify-content-between mb-2">
           <div class="fw-semibold">Submission File</div>
-          {% if submission.corrected_submission_path %}
-            <span class="badge bg-info text-dark">Re-uploaded</span>
-          {% endif %}
+          <div class="d-flex align-items-center gap-2">
+            {% if pdf_filename %}
+              <span class="text-muted small d-none d-md-inline">{{ pdf_filename }}</span>
+              <a class="btn btn-outline-secondary btn-xs" target="_blank"
+                 href="{{ url_for('uploaded_file', filename=pdf_filename) }}">Open in new tab</a>
+            {% endif %}
+            {% if submission.corrected_submission_path %}
+              <span class="badge bg-info text-dark">Re-uploaded</span>
+            {% endif %}
+          </div>
         </div>
-        <div class="pdf-wrap">
+        <div class="pdf-wrap flex-grow-1">
           {% if pdf_filename %}
-            <object data="{{ url_for('uploaded_file', filename=pdf_filename) }}" type="application/pdf" class="pdf-view">
+            <object data="{{ url_for('uploaded_file', filename=pdf_filename) }}" type="application/pdf" class="pdf-view" id="pdfView">
               <iframe src="{{ url_for('uploaded_file', filename=pdf_filename) }}" class="pdf-view"></iframe>
             </object>
           {% else %}
@@ -105,18 +125,52 @@
     </div>
   </div>
 
-  <!-- Right: All questions in one panel (scrolls) -->
+  <!-- Right: Questions (height synced to PDF) -->
   <div class="col-lg-6">
-    <div class="right-scroll">
-      <form id="markForm" method="post" class="qpanel shadow-sm">
+    <div class="right-scroll" id="rightScroll">
+      <!-- Filters / helpers -->
+      <div class="mb-2 controls">
+        <div class="input-group input-group-sm" style="max-width:320px;">
+          <span class="input-group-text">Search</span>
+          <input id="qSearch" type="text" class="form-control" placeholder="Filter by Q number or feedback text…">
+          <button id="btnClearSearch" class="btn btn-outline-secondary">×</button>
+        </div>
+
+        <div class="form-check form-switch">
+          <input class="form-check-input" type="checkbox" id="toggleOpenOnly">
+          <label class="form-check-label small" for="toggleOpenOnly">Show open only</label>
+        </div>
+
+        <div class="dropdown">
+          <button class="btn btn-outline-secondary btn-sm dropdown-toggle" data-bs-toggle="dropdown" type="button">
+            Quick comments
+          </button>
+          <div class="dropdown-menu p-2" style="min-width: 260px;">
+            <div class="small text-muted mb-1">Insert into selected question:</div>
+            <button class="dropdown-item btn-sm js-qc" type="button">Good evidence provided.</button>
+            <button class="dropdown-item btn-sm js-qc" type="button">Meets assessment criteria—concise and correct.</button>
+            <button class="dropdown-item btn-sm js-qc" type="button">Please expand with step-by-step reasoning.</button>
+            <button class="dropdown-item btn-sm js-qc" type="button">Missing required reference / citation. Add and resubmit.</button>
+            <button class="dropdown-item btn-sm js-qc" type="button">Answer off-topic—re-read the question and address each part.</button>
+          </div>
+        </div>
+
+        <div class="text-muted small ms-auto">
+          Shortcuts: <span class="kbd">↑</span>/<span class="kbd">↓</span> move • <span class="kbd">P</span> Pass • <span class="kbd">{{ 'F' if final_attempt else 'R' }}</span> {{ 'Fail' if final_attempt else 'Refer' }}
+        </div>
+      </div>
+
+      <form id="markForm" method="post" class="qpanel shadow-sm" autocomplete="off">
         <div class="qpanel-header d-flex align-items-center justify-content-between">
           <div class="fw-semibold">Questions</div>
           <div class="text-muted small">Select Pass / {% if final_attempt %}Fail{% else %}Refer{% endif %} for each open item</div>
         </div>
-        <div class="qpanel-body">
+
+        <div class="qpanel-body" id="qList">
           {% for row in rows %}
-          <div class="qrow" data-q="{{ row.number }}">
-            <!-- Left: Q badge + previous state -->
+          {% set neg_label = 'Fail' if final_attempt else 'Refer' %}
+          {% set neg_value = 'Fail' if final_attempt else 'Refer' %}
+          <div class="qrow {% if row.open %}is-open{% else %}is-locked{% endif %}" data-q="{{ row.number }}" data-open="{{ 1 if row.open else 0 }}">
             <div class="qcol-left">
               <span class="badge bg-secondary qbadge">Q{{ row.number }}</span>
               {% if not is_first_attempt %}
@@ -128,8 +182,7 @@
               {% endif %}
             </div>
 
-            <!-- Middle: feedback box -->
-            <div class="mark-feedback">
+            <div class="mark-feedback w-100">
               <textarea
                 class="form-control fbx"
                 name="q_{{ row.number }}_comment"
@@ -138,11 +191,7 @@
                 placeholder="{% if row.open %}Add feedback…{% else %}Previously passed — locked{% endif %}">{{ row.prev_comment or '' }}</textarea>
             </div>
 
-            <!-- Right: Pass/Refer(or Fail) -->
             <div class="mark-toggle">
-              {% set neg_label = 'Fail' if final_attempt else 'Refer' %}
-              {% set neg_value = 'Fail' if final_attempt else 'Refer' %}
-
               <input class="btn-check q-radio" type="radio" name="q_{{ row.number }}_status" id="q{{ row.number }}_pass"
                      value="Pass" {% if not row.open %}disabled{% endif %} autocomplete="off" required>
               <label class="btn btn-outline-success btn-sm" for="q{{ row.number }}_pass">Pass</label>
@@ -154,6 +203,7 @@
           </div>
           {% endfor %}
         </div>
+        <!-- NOTE: Removed the secondary bottom submit button per your request -->
       </form>
     </div>
   </div>
@@ -162,35 +212,214 @@
 
 {% block extra_scripts %}
 <script>
-  (function(){
-    const finalAttempt = {{ 'true' if final_attempt else 'false' }};
-    const rows = document.querySelectorAll('.qrow');
+(function(){
+  const finalAttempt = {{ 'true' if final_attempt else 'false' }};
+  const submissionId = {{ submission.id or 0 }};
+  const rows = Array.from(document.querySelectorAll('.qrow'));
+  const qList = document.getElementById('qList');
+  const progBar = document.getElementById('progBar');
+  const progCount = document.getElementById('progCount');
+  const btnNextOpen = document.getElementById('btnNextOpen');
+  const qSearch = document.getElementById('qSearch');
+  const btnClearSearch = document.getElementById('btnClearSearch');
+  const toggleOpenOnly = document.getElementById('toggleOpenOnly');
+  const quickCommentBtns = document.querySelectorAll('.js-qc');
+  const rightScroll = document.getElementById('rightScroll');
+  const pdfView = document.getElementById('pdfView');
 
-    function applyStatusStyles(row){
-      const q = row.getAttribute('data-q');
-      const area = row.querySelector('textarea.fbx');
-      if (!area) return;
+  const storageKey = `mark-draft-${submissionId}`;
+  let focusedRowIndex = 0;
 
-      area.classList.remove('fbx-pass','fbx-refer','fbx-fail');
+  function rowState(row){
+    const q = row.dataset.q;
+    const pass = row.querySelector(`#q${q}_pass`);
+    const neg  = row.querySelector(`#q${q}_neg`);
+    if (pass?.checked) return 'Pass';
+    if (neg?.checked)  return finalAttempt ? 'Fail' : 'Refer';
+    return null;
+  }
 
-      const pass = row.querySelector(`#q${q}_pass`);
-      const neg  = row.querySelector(`#q${q}_neg`);
+  function applyStatusStyles(row){
+    const area = row.querySelector('textarea.fbx');
+    if (!area) return;
+    area.classList.remove('fbx-pass','fbx-refer','fbx-fail');
+    const st = rowState(row);
+    if (st === 'Pass')       area.classList.add('fbx-pass');
+    else if (st === 'Refer') area.classList.add('fbx-refer');
+    else if (st === 'Fail')  area.classList.add('fbx-fail');
+  }
 
-      let state = null;
-      if (pass && pass.checked) state = 'Pass';
-      else if (neg && neg.checked) state = finalAttempt ? 'Fail' : 'Refer';
+  function updateProgress(){
+    const marked = rows.filter(r => rowState(r)).length;
+    const total  = rows.length;
+    const pct = total ? Math.round(100 * marked / total) : 0;
+    progBar.style.width = pct + '%';
+    progCount.textContent = marked;
+  }
 
-      if (state === 'Pass')       area.classList.add('fbx-pass');
-      else if (state === 'Refer') area.classList.add('fbx-refer');
-      else if (state === 'Fail')  area.classList.add('fbx-fail');
+  function nextOpen(fromIndex){
+    for (let i = fromIndex + 1; i < rows.length; i++){
+      if (rows[i].dataset.open === '1') return i;
     }
+    for (let i = 0; i <= fromIndex; i++){
+      if (rows[i].dataset.open === '1') return i;
+    }
+    return fromIndex;
+  }
 
-    rows.forEach(row => {
-      const q = row.getAttribute('data-q');
-      const inputs = row.querySelectorAll(`input[name="q_${q}_status"]`);
-      inputs.forEach(i => i.addEventListener('change', () => applyStatusStyles(row)));
-      applyStatusStyles(row);
+  function focusRow(idx){
+    focusedRowIndex = Math.max(0, Math.min(rows.length - 1, idx));
+    const row = rows[focusedRowIndex];
+    row.scrollIntoView({block:'center', behavior:'smooth'});
+    const area = row.querySelector('textarea[disabled], textarea, .q-radio');
+    (area && !area.disabled ? area : row).focus?.();
+    rows.forEach(r => r.classList.remove('border','border-primary-subtle','shadow-sm'));
+    row.classList.add('border','border-primary-subtle','shadow-sm');
+  }
+
+  function saveDraft(){
+    const data = {};
+    rows.forEach(r => {
+      const q = r.dataset.q;
+      const st = rowState(r);
+      const comment = r.querySelector('textarea')?.value || '';
+      data[q] = { st, comment };
     });
-  })();
+    localStorage.setItem(storageKey, JSON.stringify(data));
+  }
+
+  function loadDraft(){
+    try{
+      const raw = localStorage.getItem(storageKey);
+      if (!raw) return;
+      const data = JSON.parse(raw);
+      rows.forEach(r => {
+        const q = r.dataset.q;
+        const d = data[q];
+        if (!d) return;
+        const area = r.querySelector('textarea');
+        if (area && !area.disabled && d.comment) area.value = d.comment;
+        if (d.st){
+          const inp = r.querySelector(`input[value="${d.st}"]`);
+          if (inp && !inp.disabled) inp.checked = true;
+        }
+        applyStatusStyles(r);
+      });
+      updateProgress();
+    }catch(e){}
+  }
+
+  function filterList(){
+    const needle = (qSearch.value || '').trim().toLowerCase();
+    const openOnly = toggleOpenOnly.checked;
+    rows.forEach(r => {
+      const qnum = `q${r.dataset.q}`;
+      const text = r.querySelector('textarea')?.value.toLowerCase() || '';
+      const match = !needle || qnum.includes(needle) || text.includes(needle);
+      const openOK = !openOnly || r.dataset.open === '1';
+      r.style.display = (match && openOK) ? '' : 'none';
+    });
+  }
+
+  // Height sync: match right panel to PDF viewport height exactly
+  function syncRightHeight(px){
+    // On mobile, let it be natural height
+    if (window.matchMedia('(max-width: 991.98px)').matches){
+      rightScroll.style.maxHeight = 'none';
+      return;
+    }
+    if (px && px > 0){
+      rightScroll.style.maxHeight = px + 'px';
+    }
+  }
+  function initHeightSync(){
+    if (!pdfView) return;
+    // Initial
+    syncRightHeight(pdfView.clientHeight);
+    // Resize observer for PDF viewport changes
+    if ('ResizeObserver' in window){
+      const ro = new ResizeObserver(entries => {
+        for (const entry of entries){
+          syncRightHeight(entry.contentRect.height);
+        }
+      });
+      ro.observe(pdfView);
+    } else {
+      // Fallback on window resize
+      window.addEventListener('resize', () => syncRightHeight(pdfView.clientHeight));
+    }
+  }
+
+  // Wire up rows
+  rows.forEach((row, idx) => {
+    const q = row.dataset.q;
+    row.querySelectorAll(`input[name="q_${q}_status"]`).forEach(i => {
+      i.addEventListener('change', () => { applyStatusStyles(row); updateProgress(); saveDraft(); });
+    });
+    const ta = row.querySelector('textarea');
+    ta?.addEventListener('input', () => saveDraft());
+    row.addEventListener('click', (e) => {
+      if (e.target.tagName.toLowerCase() === 'textarea' || e.target.classList.contains('btn')) return;
+      focusRow(idx);
+    });
+    applyStatusStyles(row);
+  });
+
+  // Init
+  updateProgress();
+  loadDraft();
+  focusRow(0);
+  initHeightSync();
+
+  // Next open
+  btnNextOpen?.addEventListener('click', () => {
+    const nxt = nextOpen(focusedRowIndex);
+    focusRow(nxt);
+  });
+
+  // Search & filters
+  qSearch?.addEventListener('input', filterList);
+  toggleOpenOnly?.addEventListener('change', filterList);
+  btnClearSearch?.addEventListener('click', () => { qSearch.value=''; filterList(); qSearch.focus(); });
+
+  // Quick comments
+  quickCommentBtns.forEach(btn => btn.addEventListener('click', () => {
+    const row = rows[focusedRowIndex] || rows[0];
+    const ta = row?.querySelector('textarea');
+    if (!ta || ta.disabled) return;
+    const txt = btn.textContent.trim();
+    ta.value = (ta.value ? ta.value.trim() + ' ' : '') + txt;
+    ta.dispatchEvent(new Event('input', {bubbles:true}));
+    ta.focus();
+  }));
+
+  // Keyboard shortcuts
+  document.addEventListener('keydown', (e) => {
+    const tag = (e.target?.tagName || '').toLowerCase();
+    const typing = tag === 'textarea' || tag === 'input' || tag === 'select';
+    if (typing) return;
+
+    if (e.key === 'ArrowDown'){ e.preventDefault(); focusRow(Math.min(rows.length-1, focusedRowIndex+1)); }
+    if (e.key === 'ArrowUp'){ e.preventDefault(); focusRow(Math.max(0, focusedRowIndex-1)); }
+    if (e.key.toLowerCase() === 'p'){ e.preventDefault(); const row = rows[focusedRowIndex]; if (!row || row.dataset.open !== '1') return; row.querySelector(`input[value="Pass"]`)?.click(); }
+    if (e.key.toLowerCase() === (finalAttempt ? 'f' : 'r')){ e.preventDefault(); const row = rows[focusedRowIndex]; if (!row || row.dataset.open !== '1') return; row.querySelector(`input[value="${finalAttempt ? 'Fail':'Refer'}"]`)?.click(); }
+  });
+
+  // Submit guard
+  document.getElementById('markForm')?.addEventListener('submit', (e) => {
+    const unmarked = rows.filter(r => r.dataset.open === '1' && !rowState(r));
+    if (unmarked.length){
+      e.preventDefault();
+      const qnums = unmarked.slice(0,5).map(r => r.dataset.q).join(', ');
+      if (!confirm(`There are ${unmarked.length} open question(s) without a mark (e.g., Q${qnums}).\n\nSubmit anyway?`)){
+        const idx = rows.indexOf(unmarked[0]);
+        if (idx >= 0) focusRow(idx);
+        return;
+      }
+    }
+    localStorage.removeItem(storageKey);
+  });
+
+})();
 </script>
 {% endblock %}

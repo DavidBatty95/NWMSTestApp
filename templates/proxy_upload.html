@@ -1,0 +1,75 @@
+{% extends 'base.html' %}
+{% block title %}Upload for {{ student.username }}{% endblock %}
+
+{% block content %}
+<div class="d-flex align-items-center justify-content-between mb-3">
+  <div>
+    <h5 class="mb-0">Upload on behalf of <span class="fw-semibold">{{ student.username }}</span></h5>
+    <div class="text-muted small">Course: {{ (student.course or '—') }} · Required workbooks: {{ required }}</div>
+  </div>
+  <div class="d-flex gap-2">
+    {% if current_user.role == 'marker' %}
+      <a href="{{ url_for('marker_view_student', student_id=student.id) }}" class="btn btn-light btn-sm">← Back to Student</a>
+    {% else %}
+      <a href="{{ url_for('admin_dashboard') }}" class="btn btn-light btn-sm">← Back to Admin</a>
+    {% endif %}
+  </div>
+</div>
+
+<div class="row g-3">
+  <div class="col-lg-7">
+    <div class="card shadow-sm">
+      <div class="card-body">
+        <h6 class="fw-semibold mb-3">Upload a PDF</h6>
+        <form method="post" enctype="multipart/form-data" class="vstack gap-3">
+          <div>
+            <label class="form-label">Workbook</label>
+            <select name="workbook_number" class="form-select" required>
+              {% for i in range(1, required + 1) %}
+                <option value="{{ i }}">Workbook {{ i }}</option>
+              {% endfor %}
+            </select>
+            <div class="form-text">A fresh submission row will be created for the selected workbook.</div>
+          </div>
+
+          <div>
+            <label class="form-label">PDF file (max 50 MB)</label>
+            <input type="file" name="file" accept="application/pdf" class="form-control" required>
+          </div>
+
+          <div class="d-flex justify-content-end">
+            <button class="btn btn-primary">Upload PDF</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-5">
+    <div class="card shadow-sm">
+      <div class="card-body">
+        <h6 class="fw-semibold mb-3">Current status</h6>
+        <div class="list-group">
+          {% for row in summary %}
+            <div class="list-group-item d-flex justify-content-between align-items-center">
+              <div>
+                <div class="fw-semibold">Workbook {{ row.wb }}</div>
+                <div class="text-muted small">{{ row.label }}{% if row.status_note %} · {{ row.status_note }}{% endif %}</div>
+              </div>
+              <a class="btn btn-outline-secondary btn-sm"
+                 href="#"
+                 onclick="event.preventDefault(); document.querySelector('select[name=workbook_number]').value='{{ row.wb }}'; window.scrollTo({ top: 0, behavior: 'smooth' });">
+                Choose
+              </a>
+            </div>
+          {% endfor %}
+        </div>
+        <div class="text-muted small mt-3">
+          Uploads here behave exactly like the student’s own uploads:
+          we create a new submission row and carry forward the referral count from the latest attempt.
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
