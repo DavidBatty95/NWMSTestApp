@@ -90,7 +90,7 @@ QUESTION_COUNTS = {
 }
 COURSE_DEADLINES = {"FREC4": 6, "ILS": 3, "SALM": 3, "CFR": 3}
 MARKING_DEADLINE_DAYS = 14
-MAX_ATTEMPTS = 4
+MAX_ATTEMPTS = 3
 DISPLAY_TZ = ZoneInfo(os.environ.get('DISPLAY_TZ', 'Europe/London'))
 
 # ===================================================
