@@ -124,21 +124,55 @@ def generate_passcode(length: int = 10) -> str:
 # ===================================================
 # Upload helpers (relative paths + normalization)
 # ===================================================
+# Put near your other constants
+MAX_SAVED_FILENAME = 96  # final filename length cap (defensive; well under common FS limits)
+
 def save_uploaded_pdf(file_storage, filename: str) -> str:
     """
-    Save PDF into UPLOAD_ROOT/pdfs/YYYY/MM/<rand>-<secure>.pdf
-    Returns a RELATIVE path like 'pdfs/2025/09/abcd1234-workbook.pdf'
+    Save PDF into UPLOAD_ROOT/pdfs/YYYY/MM/<token>[-shortslug].pdf
+    Returns a RELATIVE path like 'pdfs/2025/09/abcd1234-workbook.pdf'.
+    Hard-limits name length to avoid 'File name too long' on some filesystems.
     """
     if not file_storage or not filename:
         abort(400, "No file provided")
-    safe = secure_filename(filename)
+
+    # Date-based subfolder
     today = datetime.now().strftime('%Y/%m')
-    target_dir = pdf_dir / today
+    target_dir = (pdf_dir / today)
     target_dir.mkdir(parents=True, exist_ok=True)
-    final_name = f"{secrets.token_hex(8)}-{safe}"
+
+    # Sanitize & extract extension
+    safe = secure_filename(filename)
+    base, ext = os.path.splitext(safe)
+    ext = (ext.lower() if ext else ".pdf")
+    if ext not in (".pdf",):  # enforce pdf-only here; relax if you support more
+        ext = ".pdf"
+
+    # Short, safe slug (optional; makes it human-ish without risking long paths)
+    slug = (base[:40] if base else "").strip("-_.")
+    token = secrets.token_hex(8)
+    final_name = f"{token}-{slug}{ext}" if slug else f"{token}{ext}"
+
+    # Enforce a hard cap on the filename itself (not the whole path)
+    if len(final_name) > MAX_SAVED_FILENAME:
+        # keep token + extension, trim slug accordingly
+        keep = MAX_SAVED_FILENAME - len(token) - len(ext) - 1  # -1 for the hyphen
+        keep = max(0, keep)
+        slug = slug[:keep]
+        final_name = f"{token}-{slug}{ext}" if slug else f"{token}{ext}"
+
     full_path = (target_dir / final_name).resolve()
-    file_storage.save(full_path)
-    return str(full_path.relative_to(upload_root))
+
+    # Final safety: ensure we're still inside upload_root
+    upload_root_resolved = upload_root.resolve()
+    if not str(full_path).startswith(str(upload_root_resolved)):
+        abort(400, "Invalid upload path")
+
+    # Save
+    file_storage.save(str(full_path))
+
+    # Return RELATIVE path (from UPLOAD_ROOT) for consistent DB storage
+    return str(full_path.relative_to(upload_root_resolved))
 
 def _rel_to_upload_root(p: Path) -> str | None:
     try:
