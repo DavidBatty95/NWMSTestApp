@@ -2,172 +2,67 @@
 {% block title %}Marker · My Students{% endblock %}
 
 {% block content %}
-<style>
-  :root{ --muted:#6c757d; --border:#e9ecef; --ink:#1f2328; }
-  .page-head{display:flex;align-items:center;justify-content:space-between;gap:1rem;margin-bottom:.75rem}
-  .page-head h2{margin:0;font-weight:700}
-  .sub{color:var(--muted);margin:0}
-  .chip{display:inline-block;padding:.35rem .6rem;border:1px solid var(--border);border-radius:999px;background:#fff;font-weight:600;font-size:.85rem}
-
-  .toolbar{position:sticky;top:16px;z-index:9}
-  .card{border-radius:12px;border:1px solid var(--border)}
-  .table-sm th,.table-sm td{padding:.55rem .65rem;vertical-align:middle}
-
-  /* Student cell with cohort pill */
-  .student-cell{display:flex;align-items:center;gap:.5rem;min-width:220px;flex-wrap:wrap}
-  .student-name{font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:220px}
-  .student-meta{color:var(--muted)}
-  .cohort-pill{
-    display:inline-flex;align-items:center;gap:.35rem;
-    padding:.2rem .5rem;border-radius:999px;
-    background:#eef2f4;border:1px solid #e1e7eb;
-    color:#495057;font-size:.75rem;white-space:nowrap
-  }
-  .text-truncate-clip{max-width:280px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  @media (max-width:992px){
-    .student-name{max-width:170px}
-    .text-truncate-clip{max-width:220px}
-  }
-  @media (max-width:576px){
-    .student-name{max-width:140px}
-    .text-truncate-clip{max-width:160px}
-  }
-</style>
-
-{# quick counts #}
-{% set total = students|length %}
-{% set pass_count = 0 %}
-{% set fail_count = 0 %}
-{% set prog_count = 0 %}
-{% for r in students %}
-  {% if r.status == 'Pass' %}{% set pass_count = pass_count + 1 %}
-  {% elif r.status == 'Fail' %}{% set fail_count = fail_count + 1 %}
-  {% else %}{% set prog_count = prog_count + 1 %}
-  {% endif %}
-{% endfor %}
-
-{# unique filter values #}
-{% set seen_courses = [] %}
-{% set seen_cohorts = [] %}
-
-<div class="page-head">
+<div class="d-flex align-items-center justify-content-between mb-3">
   <div>
     <h2 class="mb-1">My Students</h2>
-    <p class="sub">Click a student to view their summary.</p>
+    <div class="text-muted small">Click a student to view their summary.</div>
   </div>
-  <div class="d-flex gap-2 flex-wrap">
-    <span class="chip">Total: {{ total }}</span>
-    <span class="chip">Pass: {{ pass_count }}</span>
-    <span class="chip">Fail: {{ fail_count }}</span>
-    <span class="chip">In Progress: {{ prog_count }}</span>
-  </div>
+  <a href="{{ url_for('marker_dashboard') }}" class="btn btn-light btn-sm">← Back to Dashboard</a>
 </div>
 
-<div class="toolbar mb-3">
-  <div class="card shadow-sm">
-    <div class="card-body py-3">
-      <div class="row g-2 align-items-end">
-        <div class="col-lg-5">
-          <label class="form-label mb-1">Search</label>
-          <input id="searchInput" class="form-control" type="search" placeholder="Search students, emails…" aria-label="Search">
-        </div>
-        <div class="col-6 col-lg-2">
-          <label class="form-label mb-1">Course</label>
-          <select id="filterCourse" class="form-select">
-            <option value="">All</option>
-            {% for r in students %}
-              {% if r.student.course and (r.student.course not in seen_courses) %}
-                {% set _ = seen_courses.append(r.student.course) %}
-                <option value="{{ r.student.course }}">{{ r.student.course }}</option>
-              {% endif %}
-            {% endfor %}
-          </select>
-        </div>
-        <div class="col-6 col-lg-3">
-          <label class="form-label mb-1">Cohort</label>
-          <select id="filterCohort" class="form-select">
-            <option value="">All</option>
-            {% for r in students %}
-              {% set cname = (r.student.cohort.name if r.student.cohort else 'No Cohort') %}
-              {% if cname not in seen_cohorts %}
-                {% set _ = seen_cohorts.append(cname) %}
-                <option value="{{ cname }}">{{ cname }}</option>
-              {% endif %}
-            {% endfor %}
-          </select>
-        </div>
-        <div class="col-6 col-lg-2">
-          <label class="form-label mb-1">Status</label>
-          <select id="filterStatus" class="form-select">
-            <option value="">All</option>
-            <option value="pass">Pass</option>
-            <option value="fail">Fail</option>
-            <option value="in progress">In Progress</option>
-          </select>
-        </div>
-        <div class="col-6 col-lg-0 d-none d-lg-block"></div>
-      </div>
-    </div>
-  </div>
+<div class="mb-3">
+  <input id="searchInput" class="form-control form-control-sm" type="search" placeholder="Search by name, email, course…" aria-label="Search">
 </div>
 
 <div class="card shadow-sm">
-  <div class="card-body">
+  <div class="card-body p-0">
     <div class="table-responsive">
-      <table class="table table-sm table-hover align-middle mb-0" id="studentsTable">
-        <thead class="table-light sticky-top">
+      <table class="table table-hover align-middle mb-0">
+        <thead class="table-light">
           <tr class="small text-uppercase">
             <th style="min-width: 240px;">Student</th>
-            <th style="min-width: 110px;">Course</th>
-            <th style="min-width: 120px;">Status</th>
+            <th style="min-width: 120px;">Course</th>
+            <th style="min-width: 140px;">Overall</th>
             <th class="text-center" style="min-width: 120px;">Required WBs</th>
-            <th class="text-end" style="min-width: 150px;">Open</th>
+            <th class="text-end" style="min-width: 140px;">Open</th>
           </tr>
         </thead>
-        <tbody>
+        <tbody id="studentsTbody">
           {% for row in students %}
-            {% set cohort_name = (row.student.cohort.name if row.student.cohort else 'No Cohort') %}
-            {% set status_norm = (row.status or 'In Progress') %}
-            <tr class="student-row"
-                data-name="{{ (row.student.username or '')|lower }}"
-                data-email="{{ (row.student.email or '')|lower }}"
-                data-course="{{ (row.student.course or '')|lower }}"
-                data-cohort="{{ cohort_name|lower }}"
-                data-status="{{ status_norm|lower }}">
-              <td>
-                <a href="{{ url_for('marker_view_student', student_id=row.student.id) }}" class="text-decoration-none">
-                  <div class="student-cell">
-                    <span class="student-name">{{ row.student.username }}</span>
-                    <span class="student-meta">(#{{ row.student.id }})</span>
-                    <span class="cohort-pill">{{ cohort_name }}</span>
-                  </div>
-                </a>
-                <div class="small text-muted text-truncate-clip" title="{{ row.student.email }}">
-                  <a href="mailto:{{ row.student.email }}" class="text-decoration-none">{{ row.student.email }}</a>
-                </div>
-              </td>
-              <td>{{ row.student.course or '—' }}</td>
-              <td>
-                {% if row.status == 'Pass' %}
-                  <span class="badge bg-success">Pass</span>
-                {% elif row.status == 'Fail' %}
-                  <span class="badge bg-danger">Fail</span>
-                {% else %}
-                  <span class="badge bg-secondary">In Progress</span>
-                {% endif %}
-              </td>
-              <td class="text-center">{{ row.required }}</td>
-              <td class="text-end">
-                <a href="{{ url_for('marker_view_student', student_id=row.student.id) }}" class="btn btn-sm btn-outline-primary">
-                  View Summary
-                </a>
-              </td>
-            </tr>
+          {% set s = row.student %}
+          <tr class="student-row">
+            <td class="text-truncate" title="{{ s.username }} • {{ s.email }}">
+              <div class="fw-semibold">
+                <a href="{{ url_for('marker_view_student', student_id=s.id) }}" class="text-decoration-none">{{ s.username }}</a>
+              </div>
+              <div class="small text-muted">
+                ID: {{ s.id }} · <a href="mailto:{{ s.email }}" class="text-decoration-none">{{ s.email }}</a>
+              </div>
+            </td>
+            <td>{{ s.course or '—' }}</td>
+            <td>
+              {% if row.status == 'Pass' %}
+                <span class="badge bg-success">Pass</span>
+              {% elif row.status == 'Fail' %}
+                <span class="badge bg-danger">Fail</span>
+              {% else %}
+                <span class="badge bg-secondary">In Progress</span>
+              {% endif %}
+            </td>
+            <td class="text-center">
+              <span class="badge bg-light text-dark">{{ row.required }}</span>
+            </td>
+            <td class="text-end">
+              <a href="{{ url_for('marker_view_student', student_id=s.id) }}" class="btn btn-sm btn-outline-primary">
+                View Summary
+              </a>
+            </td>
+          </tr>
           {% endfor %}
           {% if students|length == 0 %}
-            <tr>
-              <td colspan="5" class="text-center text-muted py-4">No assigned students.</td>
-            </tr>
+          <tr>
+            <td colspan="5" class="text-center text-muted py-4">No assigned students.</td>
+          </tr>
           {% endif %}
         </tbody>
       </table>
@@ -175,40 +70,27 @@
   </div>
 </div>
 
+<style>
+  .table td, .table th { vertical-align: middle; }
+  .text-truncate { max-width: 420px; }
+  @media (max-width: 992px){ .text-truncate { max-width: 300px; } }
+  @media (max-width: 576px){ .text-truncate { max-width: 200px; } }
+</style>
+
 <script>
-(function(){
-  const q   = document.getElementById('searchInput');
-  const fc  = document.getElementById('filterCourse');
-  const fco = document.getElementById('filterCohort');
-  const fs  = document.getElementById('filterStatus');
+  (function () {
+    const input = document.getElementById('searchInput');
+    if (!input) return;
+    const rows = Array.from(document.querySelectorAll('#studentsTbody tr.student-row'));
+    const norm = s => (s || '').toLowerCase().trim();
 
-  const norm = s => (s||'').toString().trim().toLowerCase();
-
-  function applyFilters(){
-    const term   = norm(q?.value || '');
-    const course = norm(fc?.value || '');
-    const cohort = norm(fco?.value || '');
-    const status = norm(fs?.value || '');
-
-    document.querySelectorAll('#studentsTable tbody tr.student-row').forEach(tr => {
-      const hay = (tr.innerText || '').toLowerCase();
-      const ok =
-        (!term   || hay.includes(term)) &&
-        (!course || tr.dataset.course === course) &&
-        (!cohort || tr.dataset.cohort === cohort) &&
-        (!status || tr.dataset.status === status);
-      tr.style.display = ok ? '' : 'none';
+    input.addEventListener('input', function () {
+      const q = norm(this.value);
+      rows.forEach(tr => {
+        const text = norm(tr.innerText);
+        tr.style.display = text.includes(q) ? '' : 'none';
+      });
     });
-  }
-
-  [q, fc, fco, fs].forEach(el => {
-    if (el){
-      el.addEventListener('input', applyFilters);
-      el.addEventListener('change', applyFilters);
-    }
-  });
-
-  applyFilters();
-})();
+  })();
 </script>
 {% endblock %}

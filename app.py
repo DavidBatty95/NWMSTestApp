@@ -501,6 +501,159 @@ def _maybe_delete_uploaded_file(filename: str):
     except Exception:
         pass
 
+# ---------- Feedback PDF helpers ----------
+def _submission_overall_label(submission: WorkbookSubmission, course_code: str, q_count: int) -> str:
+    """Human-friendly overall state for a submission."""
+    if not submission:
+        return "—"
+    if not submission.marked:
+        return "Awaiting Marking"
+    # When marked:
+    if submission.is_referral:
+        return "Referral"
+    if submission.score == 0:
+        return "Fail"
+    # Pass if score == all questions for that submission (fallback to q_count)
+    expected = q_count if q_count else submission.score
+    return "Pass" if submission.score == expected else "Marked"
+
+def _wrap_text(text: str, width: int) -> list[str]:
+    """Very small word wrapper for comments in feedback PDF."""
+    words = (text or '').split()
+    if not words:
+        return [""]
+    lines, line = [], ""
+    for w in words:
+        if len(line) + len(w) + 1 <= width:
+            line = (w if not line else line + " " + w)
+        else:
+            lines.append(line)
+            line = w
+    if line:
+        lines.append(line)
+    return lines
+
+def _generate_feedback_pdf_pages(student: User, wb_number: int, submissions: list[WorkbookSubmission]) -> BytesIO | None:
+    """
+    Build a small PDF (A4) with timestamped feedback for each submission of a workbook.
+    Returns BytesIO or None if generation fails or reportlab is unavailable.
+    """
+    try:
+        from reportlab.pdfgen import canvas
+        from reportlab.lib.pagesizes import A4
+        from reportlab.lib.units import mm
+        from reportlab.lib import colors
+    except Exception:
+        # reportlab not installed
+        return None
+
+    buf = BytesIO()
+    c = canvas.Canvas(buf, pagesize=A4)
+    W, H = A4
+    LM, TM, RM, BM = 18*mm, 18*mm, 18*mm, 18*mm
+    y = H - TM
+
+    def header():
+        nonlocal y
+        c.setFont("Helvetica-Bold", 13)
+        c.drawString(LM, y, f"Workbook {wb_number} — Feedback Report")
+        c.setFont("Helvetica", 10)
+        y -= 14
+        c.setFillColor(colors.grey)
+        course = student.course or "—"
+        c.drawString(LM, y, f"Student: {student.username} (ID: {student.id})  •  Course: {course}")
+        c.setFillColor(colors.black)
+        y -= 18
+        c.setLineWidth(0.4)
+        c.setStrokeColor(colors.lightgrey)
+        c.line(LM, y, W - RM, y)
+        y -= 12
+
+    def new_page():
+        nonlocal y
+        c.showPage()
+        y = H - TM
+        header()
+
+    header()
+
+    # Sort submissions oldest -> newest so the timeline reads top-to-bottom
+    submissions_sorted = sorted(submissions, key=lambda s: (s.submission_time or datetime.min))
+    q_count = 0
+    try:
+        q_count = get_question_count(student.course, wb_number)
+    except Exception:
+        q_count = 0
+
+    for idx, sub in enumerate(submissions_sorted, start=1):
+        # If space is tight, move to new page
+        if y < (BM + 120):
+            new_page()
+
+        # Submission header
+        attempt_n = (sub.referral_count or 0) + 1
+        ts = sub.submission_time.strftime('%a %d %b %Y %H:%M') if sub.submission_time else "—"
+        c.setFont("Helvetica-Bold", 11)
+        c.drawString(LM, y, f"Submission {idx}  •  Attempt {attempt_n}")
+        y -= 14
+        c.setFont("Helvetica", 10)
+        c.setFillColor(colors.grey)
+        c.drawString(LM, y, f"Submitted: {ts}")
+        c.setFillColor(colors.black)
+        y -= 6
+        overall = _submission_overall_label(sub, student.course, q_count)
+        c.setFont("Helvetica", 10)
+        c.drawString(LM, y, f"Overall: {overall}")
+        y -= 12
+
+        # Table header
+        c.setFont("Helvetica-Bold", 10)
+        c.drawString(LM, y, "Q#")
+        c.drawString(LM + 30*mm, y, "Status")
+        c.drawString(LM + 60*mm, y, "Comment")
+        y -= 9
+        c.setStrokeColor(colors.lightgrey)
+        c.line(LM, y, W - RM, y)
+        y -= 8
+
+        # Feedback rows (include all rows for that submission)
+        fb_rows = QuestionFeedback.query.filter_by(submission_id=sub.id).order_by(QuestionFeedback.question_number.asc()).all()
+        if not fb_rows:
+            c.setFont("Helvetica-Oblique", 10)
+            c.setFillColor(colors.grey)
+            c.drawString(LM, y, "No feedback recorded for this submission.")
+            c.setFillColor(colors.black)
+            y -= 16
+        else:
+            for fb in fb_rows:
+                # page break if needed
+                if y < (BM + 40):
+                    new_page()
+                c.setFont("Helvetica", 10)
+                c.drawString(LM, y, str(fb.question_number))
+                c.drawString(LM + 30*mm, y, fb.status or "—")
+                # Wrap comment
+                comment_lines = _wrap_text(fb.comment or "", 88)  # ~88 chars per line at this font size
+                # First line
+                c.drawString(LM + 60*mm, y, comment_lines[0] if comment_lines else "")
+                y -= 14
+                # Subsequent lines
+                for extra in comment_lines[1:]:
+                    if y < (BM + 26):
+                        new_page()
+                    c.drawString(LM + 60*mm, y, extra)
+                    y -= 12
+            y -= 6
+
+        # Soft divider after each submission
+        c.setStrokeColor(colors.lightgrey)
+        c.line(LM, y, W - RM, y)
+        y -= 14
+
+    c.save()
+    buf.seek(0)
+    return buf
+
 # ===================================================
 # Routes: Auth
 # ===================================================
@@ -785,6 +938,7 @@ def marker_dashboard():
     if current_user.role != 'marker':
         return redirect(url_for('login'))
 
+    # Who’s assigned to this marker
     assigned_student_ids = [a.student_id for a in Assignment.query.filter_by(marker_id=current_user.id).all()]
     students = (User.query
                 .filter(User.role == 'student', User.id.in_(assigned_student_ids))
@@ -792,6 +946,7 @@ def marker_dashboard():
                 .all())
     users_map = {u.id: u for u in students}
 
+    # Build workload donut
     total_unsubmitted = 0
     total_to_mark = 0
     total_marked = 0
@@ -829,6 +984,64 @@ def marker_dashboard():
         "marked": total_marked,
         "total": total_unsubmitted + total_to_mark + total_marked
     }
+
+    # Helper for deadline/time-left
+    def _time_left_fields(sub):
+        deadline = sub.submission_time + timedelta(days=MARKING_DEADLINE_DAYS)
+        delta = deadline - now_utc_naive()
+        seconds = int(delta.total_seconds())
+        overdue = seconds < 0
+        secs_abs = abs(seconds)
+        days = secs_abs // 86400
+        hours = (secs_abs % 86400) // 3600
+        return {
+            "deadline": deadline,
+            "seconds_left": seconds,
+            "overdue": overdue,
+            "days": days,
+            "hours": hours,
+        }
+
+    # ---- Needs Attention (latest unmarked per (student, workbook)) ----
+    # Pull ALL unmarked rows for assigned students
+    unmarked_rows = (WorkbookSubmission.query
+                     .filter(WorkbookSubmission.student_id.in_(assigned_student_ids),
+                             WorkbookSubmission.marked.is_(False))
+                     .order_by(WorkbookSubmission.submission_time.desc())
+                     .all())
+
+    # Keep only the latest per (student_id, workbook_number)
+    latest_unmarked = {}
+    for sub in unmarked_rows:
+        key = (sub.student_id, sub.workbook_number)
+        if key not in latest_unmarked:
+            latest_unmarked[key] = sub  # first seen is newest because we ordered desc
+
+    needs_attention = []
+    for (sid, wb), sub in latest_unmarked.items():
+        student = users_map.get(sid)
+        if not student:
+            continue
+        tlf = _time_left_fields(sub)
+        needs_attention.append({
+            "submission": sub,
+            "student": student,
+            "wb": wb,
+            **tlf
+        })
+
+    # Sort: most urgent first (overdue/least seconds_left first)
+    needs_attention.sort(key=lambda x: x["seconds_left"])
+    # Trim if you want to cap the list (e.g., 20)
+    needs_attention = needs_attention[:20]
+
+    return render_template(
+        'marker_dashboard.html',
+        donut_data=donut_data,
+        students_overview=overview_rows,
+        to_mark_list=needs_attention,     # keep for back-compat
+        needs_attention=needs_attention,  # new explicit name
+    )
 
     def _time_left_fields(sub):
         deadline = sub.submission_time + timedelta(days=MARKING_DEADLINE_DAYS)
@@ -1044,6 +1257,13 @@ def mark_workbook_questions(submission_id):
 @app.route('/export_student_report/<int:student_id>')
 @login_required
 def export_student_report(student_id):
+    """
+    Export a combined PDF of all workbooks for the student.
+    If ?with_feedback=1 is provided, append a feedback report (PDF pages)
+    immediately after each workbook containing timestamped feedback for all
+    submissions of that workbook.
+    """
+    # Permissions: marker must be assigned OR admin
     if current_user.role == 'marker':
         if not marker_is_assigned_to_student(current_user.id, student_id):
             abort(403)
@@ -1051,72 +1271,130 @@ def export_student_report(student_id):
         abort(403)
 
     student = db.session.get(User, student_id)
-    if not student: abort(404)
+    if not student:
+        abort(404)
 
+    include_feedback = request.args.get('with_feedback', '0') in ('1', 'true', 'yes')
+
+    # Determine required workbook count for the course
     required = get_total_workbooks(student.course)
+
+    # Build candidate PDFs (latest submission per workbook)
     candidates = []
     for wb in range(1, required + 1):
         latest = (WorkbookSubmission.query
                   .filter_by(student_id=student.id, workbook_number=wb)
                   .order_by(WorkbookSubmission.submission_time.desc()).first())
+
         if not latest:
-            candidates.append((wb, None, "missing")); continue
+            candidates.append((wb, None, "missing"));
+            continue
+
         chosen = latest.file_path or latest.corrected_submission_path
         if not chosen:
-            candidates.append((wb, None, "no_file")); continue
+            candidates.append((wb, None, "no_file"));
+            continue
+
         p = Path(chosen)
         if not p.is_absolute():
             p = upload_root / chosen
+
         candidates.append((wb, str(p) if p.exists() else None, "ok" if p.exists() else "not_found"))
 
+    # Prepare a PyPDF2 merger and lists for user feedback
     merger = PdfMerger()
     merged_any = False
     merged_list, skipped_list = [], []
+
     for wb, path, state in sorted(candidates, key=lambda t: t[0]):
-        if state != "ok" or not path:
-            skipped_list.append(f"WB{wb}: {state}")
-            continue
-        if not path.lower().endswith('.pdf'):
-            skipped_list.append(f"WB{wb}: not a PDF ({os.path.basename(path)})")
-            continue
-        try:
-            with open(path, "rb") as fh:
-                merger.append(fh)
-            merged_any = True
-            merged_list.append(f"WB{wb}: {os.path.basename(path)}")
-        except Exception:
+        # Try to append the workbook PDF (if present)
+        if state == "ok" and path and path.lower().endswith('.pdf'):
             try:
                 with open(path, "rb") as fh:
-                    reader = PdfReader(fh, strict=False)
-                    if getattr(reader, "is_encrypted", False):
-                        try: reader.decrypt("")
-                        except Exception: pass
-                    if getattr(reader, "is_encrypted", False):
-                        skipped_list.append(f"WB{wb}: encrypted (skipped)")
-                        continue
-                    for page in reader.pages:
-                        merger.add_page(page)
+                    merger.append(fh)
                 merged_any = True
-                merged_list.append(f"WB{wb}: {os.path.basename(path)} (page-merge)")
+                merged_list.append(f"WB{wb}: {os.path.basename(path)}")
+
+                # If feedback requested, build feedback PDF for *all submissions* of this workbook
+                if include_feedback:
+                    subs_for_wb = (WorkbookSubmission.query
+                                   .filter_by(student_id=student.id, workbook_number=wb)
+                                   .order_by(WorkbookSubmission.submission_time.asc())
+                                   .all())
+                    fb_buf = _generate_feedback_pdf_pages(student, wb, subs_for_wb)
+                    if fb_buf:
+                        merger.append(fb_buf)
+                    else:
+                        skipped_list.append(f"WB{wb} feedback: reportlab not installed")
             except Exception:
-                skipped_list.append(f"WB{wb}: unreadable (skipped)")
+                # Fallback: try page-by-page (handles some malformed PDFs)
+                try:
+                    with open(path, "rb") as fh:
+                        reader = PdfReader(fh, strict=False)
+                        if getattr(reader, "is_encrypted", False):
+                            try: reader.decrypt("")
+                            except Exception: pass
+                        if getattr(reader, "is_encrypted", False):
+                            skipped_list.append(f"WB{wb}: encrypted (skipped)")
+                            continue
+                        for page in reader.pages:
+                            merger.add_page(page)
+                    merged_any = True
+                    merged_list.append(f"WB{wb}: {os.path.basename(path)} (page-merge)")
+
+                    if include_feedback:
+                        subs_for_wb = (WorkbookSubmission.query
+                                       .filter_by(student_id=student.id, workbook_number=wb)
+                                       .order_by(WorkbookSubmission.submission_time.asc())
+                                       .all())
+                        fb_buf = _generate_feedback_pdf_pages(student, wb, subs_for_wb)
+                        if fb_buf:
+                            merger.append(fb_buf)
+                        else:
+                            skipped_list.append(f"WB{wb} feedback: reportlab not installed")
+                except Exception:
+                    skipped_list.append(f"WB{wb}: unreadable (skipped)")
+        else:
+            # Workbook missing or not found
+            reason = "missing" if state == "missing" else ("not found" if state == "not_found" else "unsupported")
+            skipped_list.append(f"WB{wb}: {reason}")
+
+            # Even if workbook file is missing, still append the feedback pages (if any and requested)
+            if include_feedback:
+                subs_for_wb = (WorkbookSubmission.query
+                               .filter_by(student_id=student.id, workbook_number=wb)
+                               .order_by(WorkbookSubmission.submission_time.asc())
+                               .all())
+                if subs_for_wb:
+                    fb_buf = _generate_feedback_pdf_pages(student, wb, subs_for_wb)
+                    if fb_buf:
+                        merger.append(fb_buf)
+                        merged_any = True
+                        merged_list.append(f"WB{wb}: (feedback only)")
+                # else: no submissions, nothing to add
 
     if not merged_any:
-        flash("No PDF workbooks could be merged." + (f" Skipped: {'; '.join(skipped_list)}" if skipped_list else ""), "warning")
+        flash("No PDF workbooks or feedback could be merged.", "warning")
         return redirect(url_for('marker_view_student', student_id=student.id) if current_user.role == 'marker' else 'admin_dashboard')
 
-    buf = BytesIO()
-    try: merger.write(buf)
+    # Write merged output to memory
+    out = BytesIO()
+    try:
+        merger.write(out)
     finally:
         try: merger.close()
         except Exception: pass
-    buf.seek(0)
+    out.seek(0)
 
-    if merged_list: flash("Merged: " + "; ".join(merged_list[:6]) + ("…" if len(merged_list) > 6 else ""), "success")
-    if skipped_list: flash("Skipped: " + "; ".join(skipped_list[:6]) + ("…" if len(skipped_list) > 6 else ""), "info")
+    # Friendly toasts
+    if merged_list:
+        flash("Merged: " + "; ".join(merged_list[:6]) + ("…" if len(merged_list) > 6 else ""), "success")
+    if skipped_list:
+        flash("Skipped: " + "; ".join(skipped_list[:6]) + ("…" if len(skipped_list) > 6 else ""), "info")
 
-    download_name = f"{secure_filename(student.username or 'student')}_workbooks.pdf"
-    return send_file(buf, as_attachment=True, download_name=download_name, mimetype="application/pdf", max_age=0)
+    suffix = "_with_feedback" if include_feedback else ""
+    download_name = f"{secure_filename(student.username or 'student')}_workbooks{suffix}.pdf"
+    return send_file(out, as_attachment=True, download_name=download_name, mimetype="application/pdf", max_age=0)
 
 # ===================================================
 # Admin: Dashboards & Settings

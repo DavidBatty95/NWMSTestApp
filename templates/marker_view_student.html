@@ -2,64 +2,95 @@
 {% block title %}Marker · {{ student.username }}{% endblock %}
 
 {% block content %}
-<div class="d-flex flex-wrap align-items-center justify-content-between mb-3 gap-2">
+<div class="d-flex flex-wrap align-items-start justify-content-between mb-3 gap-2">
   <div>
     <h2 class="mb-1">Student: {{ student.username }}</h2>
     <div class="text-muted">
-      ID: {{ student.id }} • Email:
-      <a href="mailto:{{ student.email }}">{{ student.email }}</a>
-      • Course: <strong>{{ student.course or '—' }}</strong>
+      ID: {{ student.id }} •
+      Email: <a href="mailto:{{ student.email }}">{{ student.email }}</a> •
+      Course: <strong>{{ student.course or '—' }}</strong>
     </div>
-    <div class="mt-1">
+    <div class="mt-1 d-flex align-items-center flex-wrap gap-2">
       {% if status == 'Pass' %}
         <span class="badge bg-success">Overall: Pass</span>
       {% elif status == 'Fail' %}
-        <span class="badge bg-danger">Overall: Fail</span>
+        <span class="badge bg-dark">Overall: Fail</span>
       {% else %}
         <span class="badge bg-secondary">Overall: In Progress</span>
       {% endif %}
-      <span class="badge bg-light text-dark ms-1">Required workbooks: {{ required }}</span>
+      <span class="badge bg-light text-dark">Required workbooks: {{ required }}</span>
     </div>
   </div>
 
-  <div class="d-flex align-items-center gap-2">
-    <a href="{{ url_for('export_student_report', student_id=student.id) }}" class="btn btn-outline-secondary btn-sm">
-      Export Report (PDF)
+  <div class="d-flex align-items-center flex-wrap gap-2">
+    <a href="{{ url_for('export_student_report', student_id=student.id, with_feedback=1) }}"
+       class="btn btn-outline-secondary btn-sm">
+      Export (PDF + Feedback)
     </a>
-    <a class="btn btn-sm btn-light" href="{{ url_for('marker_students') }}">← My Students</a>
-    <a class="btn btn-sm btn-light" href="{{ url_for('marker_dashboard') }}">Marker Dashboard</a>
+
+    <a href="{{ url_for('proxy_upload', student_id=student.id) }}"
+       class="btn btn-outline-primary btn-sm">
+      Upload on Behalf
+    </a>
+
+    <div class="vr d-none d-md-block"></div>
+
     {% if prev_id %}
-      <a class="btn btn-sm btn-light" href="{{ url_for('marker_view_student', student_id=prev_id) }}">&larr; Prev</a>
+      <a class="btn btn-light btn-sm" href="{{ url_for('marker_view_student', student_id=prev_id) }}">&larr; Prev</a>
     {% endif %}
     {% if next_id %}
-      <a class="btn btn-sm btn-light" href="{{ url_for('marker_view_student', student_id=next_id) }}">Next &rarr;</a>
+      <a class="btn btn-light btn-sm" href="{{ url_for('marker_view_student', student_id=next_id) }}">Next &rarr;</a>
     {% endif %}
+
+    <a class="btn btn-light btn-sm" href="{{ url_for('marker_students') }}">My Students</a>
+    <a class="btn btn-light btn-sm" href="{{ url_for('marker_dashboard') }}">Dashboard</a>
   </div>
 </div>
 
 <div class="card shadow-sm">
   <div class="card-body">
+    <!-- Legend -->
+    <div class="d-flex flex-wrap gap-2 mb-3 small">
+      <span class="badge bg-secondary">Awaiting submission / Original</span>
+      <span class="badge bg-warning text-dark">Awaiting Marking</span>
+      <span class="badge bg-success">Pass</span>
+      <span class="badge bg-danger">Referral</span>
+      <span class="badge bg-dark">Fail</span>
+      <span class="badge bg-outline">Attempt N</span>
+    </div>
+
     <div class="table-responsive">
       <table class="table table-hover align-middle mb-0">
         <thead class="table-light">
           <tr>
-            <th>Workbook</th>
+            <th style="min-width:90px;">Workbook</th>
             <th>Files</th>
-            <th>Submitted</th>
-            <th>Latest File</th>
+            <th style="min-width:160px;">Submitted</th>
+            <th style="min-width:120px;">Latest File</th>
             <th>Status</th>
-            <th>Score</th>
-            <th>Attempts</th>
-            <th>Deadline</th>
-            <th class="text-end">Actions</th>
+            <th class="text-center" style="min-width:90px;">Score</th>
+            <th class="text-center" style="min-width:110px;">Attempt</th>
+            <th style="min-width:120px;">Deadline</th>
+            <th class="text-end" style="min-width:150px;">Actions</th>
           </tr>
         </thead>
         <tbody>
-          {% for w in workbooks|sort(attribute='workbook_number') %}
+          {# Sort by workbook then submission time (newest first for readability) #}
+          {% for w in workbooks|sort(attribute='workbook_number')|sort(attribute='submission_time', reverse=True) %}
+            {# Attempt number: count earlier submissions of same WB #}
+            {% set earlier_same_wb = (workbooks
+                | selectattr('workbook_number','equalto', w.workbook_number)
+                | selectattr('submission_time','lt', w.submission_time)
+                | list
+                | length) %}
+            {% set attempt_n = earlier_same_wb + 1 %}
+
             {% set latest_file = w.corrected_submission_path or w.file_path %}
-            {% set was_reupload = (w.corrected_submission_time is not none) %}
+            {% set is_pdf = latest_file and (latest_file|string).lower().endswith('.pdf') %}
+
             {% set days_left, hours_left, deadline = get_marking_deadline(w) %}
             {% set overdue = (deadline - now).total_seconds() < 0 and not w.marked %}
+
             <tr class="{{ 'table-danger' if overdue else '' }}">
               <td class="fw-semibold">#{{ w.workbook_number }}</td>
 
@@ -84,17 +115,23 @@
               </td>
 
               <td>
-                <div title="{{ w.submission_time }}">{{ w.submission_time.strftime('%Y-%m-%d %H:%M') }}</div>
-                {% if was_reupload and w.corrected_submission_time %}
-                  <div class="small text-danger" title="{{ w.corrected_submission_time }}">Re-uploaded at {{ w.corrected_submission_time.strftime('%Y-%m-%d %H:%M') }}</div>
+                <div title="{{ w.submission_time }}">
+                  {{ w.submission_time.strftime('%Y-%m-%d %H:%M') }}
+                </div>
+                {% if w.corrected_submission_time %}
+                  <div class="small text-muted" title="{{ w.corrected_submission_time }}">
+                    Re-upload: {{ w.corrected_submission_time.strftime('%Y-%m-%d %H:%M') }}
+                  </div>
                 {% endif %}
               </td>
 
               <td>
                 {% if w.corrected_submission_path %}
                   <span class="badge bg-danger">Re-upload</span>
-                {% else %}
+                {% elif w.file_path %}
                   <span class="badge bg-secondary">Original</span>
+                {% else %}
+                  <span class="text-muted">—</span>
                 {% endif %}
               </td>
 
@@ -103,23 +140,29 @@
                   {% if w.is_referral %}
                     <span class="badge bg-danger">Referral (awaiting)</span>
                   {% else %}
-                    <span class="badge bg-warning text-dark">To be marked</span>
+                    <span class="badge bg-warning text-dark">Awaiting Marking</span>
                   {% endif %}
-                {% elif w.is_referral %}
-                  <span class="badge bg-danger">Referral</span>
-                {% elif w.score == 100 %}
-                  <span class="badge bg-success">Pass</span>
-                {% elif w.score == 0 %}
-                  <span class="badge bg-dark">Fail</span>
                 {% else %}
-                  <span class="badge bg-info text-dark">Marked</span>
+                  {% if w.is_referral %}
+                    <span class="badge bg-danger">Referral</span>
+                  {% elif w.score == 0 %}
+                    <span class="badge bg-dark">Fail</span>
+                  {% else %}
+                    <span class="badge bg-success">Pass</span>
+                  {% endif %}
                 {% endif %}
               </td>
 
-              <td>{{ w.score if w.score is not none else '—' }}</td>
+              <td class="text-center">
+                {% if w.marked %}
+                  {{ w.score }}
+                {% else %}
+                  <span class="text-muted">—</span>
+                {% endif %}
+              </td>
 
-              <td>
-                <span class="badge bg-light text-dark">Referrals: {{ w.referral_count or 0 }}</span>
+              <td class="text-center">
+                <span class="badge bg-light text-dark">Attempt {{ attempt_n }}</span>
               </td>
 
               <td>
@@ -135,7 +178,7 @@
               </td>
 
               <td class="text-end">
-                {% if latest_file and latest_file.lower().endswith('.pdf') %}
+                {% if is_pdf %}
                   <a href="{{ url_for('mark_workbook_questions', submission_id=w.id) }}"
                      class="btn btn-sm btn-outline-success">
                     Mark by Questions
@@ -148,8 +191,13 @@
               </td>
             </tr>
           {% endfor %}
+
           {% if workbooks|length == 0 %}
-            <tr><td colspan="9" class="text-center text-muted py-4">No submissions yet.</td></tr>
+            <tr>
+              <td colspan="9" class="text-center text-muted py-4">
+                No submissions yet.
+              </td>
+            </tr>
           {% endif %}
         </tbody>
       </table>
@@ -158,7 +206,15 @@
 </div>
 
 <style>
+  .table td, .table th { vertical-align: middle; }
   .table .badge { font-weight: 600; }
   .table-danger td { border-top-color: #f1c0c0 !important; }
+  /* Soft legend outline badge */
+  .badge.bg-outline {
+    background: #fff;
+    border: 1px solid #e9ecef;
+    color: #212529;
+    font-weight: 600;
+  }
 </style>
 {% endblock %}
