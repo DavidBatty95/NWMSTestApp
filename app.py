@@ -1359,24 +1359,94 @@ def admin_activity_clear(student_id):
 def admin_cohorts():
     if current_user.role != 'admin':
         return redirect(url_for('login'))
+
     markers = User.query.filter_by(role='marker').order_by(User.username.asc()).all()
 
+    # courses list from DB (preferred) falling back to constants
     db_courses = Course.query.order_by(Course.code.asc()).all()
     courses = [c.code for c in db_courses] if db_courses else sorted(COURSE_WORKBOOKS.keys())
 
     if request.method == 'POST':
-        # ... (unchanged handling for create)
-        pass
+        # ----- Read & validate POST -----
+        course = (request.form.get('course') or '').strip()
+        marker_id_raw = request.form.get('marker_id') or ''
+        start_date_str = (request.form.get('start_date') or '').strip()
+        name = (request.form.get('name') or '').strip()
 
+        if not course:
+            flash('Please choose a course.', 'warning')
+            return redirect(url_for('admin_cohorts'))
+
+        try:
+            marker_id = int(marker_id_raw)
+        except (TypeError, ValueError):
+            flash('Please choose a marker.', 'warning')
+            return redirect(url_for('admin_cohorts'))
+
+        marker = db.session.get(User, marker_id)
+        if not marker or marker.role != 'marker':
+            flash('Selected marker not found.', 'danger')
+            return redirect(url_for('admin_cohorts'))
+
+        try:
+            start_date = datetime.strptime(start_date_str, '%Y-%m-%d').date()
+        except ValueError:
+            flash('Please provide a valid start date (YYYY-MM-DD).', 'warning')
+            return redirect(url_for('admin_cohorts'))
+
+        # ----- Generate a unique passcode -----
+        passcode = None
+        for _ in range(10):
+            candidate = generate_passcode(10)  # A–Z (no I/O), 2–9
+            if not Cohort.query.filter_by(passcode=candidate).first():
+                passcode = candidate
+                break
+        if not passcode:
+            flash('Could not generate a unique passcode. Please try again.', 'danger')
+            return redirect(url_for('admin_cohorts'))
+
+        # ----- Create & commit cohort -----
+        try:
+            cohort = Cohort(
+                name=name or f"{course} {start_date.strftime('%b %Y')}",
+                course=course,
+                marker_id=marker_id,
+                start_date=start_date,
+                passcode=passcode,
+                active=True
+            )
+            db.session.add(cohort)
+            db.session.commit()
+        except Exception as e:
+            db.session.rollback()
+            app.logger.exception("Error creating cohort")
+            flash('There was a problem creating the cohort. Please try again.', 'danger')
+            return redirect(url_for('admin_cohorts'))
+
+        flash(f'Cohort created. Passcode: {passcode}', 'success')
+        return redirect(url_for('admin_cohorts'))
+
+    # ----- GET: render page -----
     cohorts = Cohort.query.order_by(Cohort.created_at.desc()).all()
-    marker_map = {m.id: m for m in User.query.filter_by(role='marker').all()}
+    marker_map = {m.id: m for m in markers}
 
-    # NEW: count students per cohort to control delete availability
-    student_counts = {c.id: User.query.filter_by(role='student', cohort_id=c.id).count() for c in cohorts}
+    # Student counts per cohort for the UI
+    student_counts = {}
+    try:
+        for s in User.query.filter_by(role='student').all():
+            if s.cohort_id:
+                student_counts[s.cohort_id] = student_counts.get(s.cohort_id, 0) + 1
+    except Exception:
+        student_counts = {}
 
-    return render_template('admin_cohorts.html', cohorts=cohorts, markers=markers,
-                           marker_map=marker_map, courses=courses,
-                           student_counts=student_counts)  # <- pass to template
+    return render_template(
+        'admin_cohorts.html',
+        cohorts=cohorts,
+        markers=markers,
+        marker_map=marker_map,
+        courses=courses,
+        student_counts=student_counts
+    )
 
 @app.route('/admin_cohorts/<int:cohort_id>/delete', methods=['POST'])
 @login_required

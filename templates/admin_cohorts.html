@@ -1,22 +1,25 @@
 {% extends 'base.html' %}
-{% block title %}Admin · Cohorts{% endblock %}
+{% block title %}Admin · Cohort Editor{% endblock %}
 
 {% block content %}
 <style>
-  .page-head { display:flex; align-items:center; justify-content:space-between; gap:1rem; margin-bottom:1rem; }
-  .page-head h2 { margin:0; font-weight:600; }
-  .muted { color:#6c757d; }
-  .card { border-radius:12px; }
-  .thin { --bs-border-width: 1px; }
-  .chip { display:inline-block; padding:.3rem .6rem; border-radius:999px; border:1px solid #e9ecef; background:#fff; font-weight:600; font-size:.85rem; }
-  .table-sm td, .table-sm th { padding:.5rem .6rem; vertical-align: middle; } /* <- vertical centering fallback */
-  .passcode { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace; }
-  td.actions { vertical-align: middle !important; text-align:center; white-space:nowrap; }
-  td.actions .btn { padding:.25rem .45rem; }
-  .filters-caret { font-size:.85rem; }
+  :root{
+    --ink:#1f2328; --muted:#6c757d; --border:#e9ecef;
+  }
+  .page-head{display:flex;align-items:center;justify-content:space-between;gap:1rem;margin-bottom:1rem}
+  .page-head h2{margin:0;font-weight:700}
+  .muted{color:var(--muted)}
+  .card{border-radius:12px;border:1px solid var(--border)}
+  .chip{display:inline-block;padding:.3rem .6rem;border-radius:999px;border:1px solid var(--border);background:#fff;font-weight:600;font-size:.85rem}
+  .table-sm th,.table-sm td{padding:.5rem .6rem;vertical-align:middle}
+  .passcode{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace}
+  td.actions{text-align:center;white-space:nowrap}
+  td.actions .btn{padding:.25rem .5rem}
+  .filters-caret{font-size:.85rem}
+  .sticky-head thead th{position:sticky;top:0;background:#f8f9fa;z-index:1}
 </style>
 
-{# ---- Safe counts (Jinja-only) ---- #}
+{# ---- Counts for header chips ---- #}
 {% set active_count = cohorts|selectattr('active')|list|length %}
 {% set inactive_count = cohorts|rejectattr('active')|list|length %}
 {% set ns = namespace(total_students=0) %}
@@ -26,31 +29,35 @@
 
 <div class="page-head">
   <div>
-    <h2>Cohorts</h2>
-    <div class="muted">Create a class, assign a marker, and manage passcodes.</div>
+    <h2>Cohort Editor</h2>
+    <div class="muted">Create classes, assign markers, and manage passcodes.</div>
   </div>
   <a href="{{ url_for('admin_dashboard') }}" class="btn btn-light btn-sm">← Dashboard</a>
 </div>
 
 <div class="row g-3">
-  <!-- Create -->
+  <!-- Create Cohort -->
   <div class="col-lg-4">
-    <div class="card thin shadow-sm">
+    <div class="card shadow-sm">
       <div class="card-body">
         <h5 class="mb-3">Create Cohort</h5>
-        <form method="post" class="vstack gap-3" id="createCohortForm">
+        <form method="post" action="{{ url_for('admin_cohorts') }}" class="vstack gap-3" id="createCohortForm">
           <div>
             <label class="form-label">Course</label>
             <select name="course" id="courseSelect" class="form-select" required>
               <option value="" disabled selected>Choose…</option>
-              {% for c in courses %}<option value="{{ c }}">{{ c }}</option>{% endfor %}
+              {% for c in courses %}
+                <option value="{{ c }}">{{ c }}</option>
+              {% endfor %}
             </select>
           </div>
           <div>
             <label class="form-label">Marker</label>
             <select name="marker_id" id="markerSelect" class="form-select" required>
               <option value="" disabled selected>Choose…</option>
-              {% for m in markers %}<option value="{{ m.id }}">{{ m.username }} ({{ m.email }})</option>{% endfor %}
+              {% for m in markers %}
+                <option value="{{ m.id }}">{{ m.username }} ({{ m.email }})</option>
+              {% endfor %}
             </select>
           </div>
           <div>
@@ -60,13 +67,14 @@
           <div>
             <label class="form-label">Name <span class="muted">(optional)</span></label>
             <input type="text" name="name" id="nameInput" class="form-control" placeholder="e.g., FREC4 Sep 2025 AM">
-            <div class="form-text">Leave blank to auto-suggest from course & date.</div>
+            <div class="form-text">Leave blank to auto-suggest from course &amp; date.</div>
           </div>
           <div class="d-flex justify-content-end gap-2">
             <button type="reset" class="btn btn-outline-secondary btn-sm">Reset</button>
-            <button class="btn btn-success btn-sm">Create &amp; generate passcode</button>
+            <button class="btn btn-success btn-sm" type="submit">Create &amp; generate passcode</button>
           </div>
         </form>
+
         <div class="d-flex gap-2 flex-wrap mt-3">
           <span class="chip">Active: {{ active_count }}</span>
           <span class="chip">Inactive: {{ inactive_count }}</span>
@@ -76,16 +84,17 @@
     </div>
   </div>
 
-  <!-- List -->
+  <!-- List Cohorts -->
   <div class="col-lg-8">
-    <div class="card thin shadow-sm">
+    <div class="card shadow-sm">
       <div class="card-body">
         <div class="d-flex align-items-end justify-content-between gap-2 mb-3">
           <div class="flex-grow-1">
             <label class="form-label mb-1">Search</label>
             <input id="searchInput" type="text" class="form-control" placeholder="Search name, passcode, marker…">
           </div>
-          <div>
+          <div class="d-flex gap-2">
+            <button id="resetFilters" class="btn btn-outline-secondary btn-sm" type="button">Reset</button>
             <button class="btn btn-outline-secondary btn-sm" type="button" data-bs-toggle="collapse" data-bs-target="#moreFilters" aria-expanded="false">
               Filters <span class="filters-caret">▾</span>
             </button>
@@ -117,7 +126,7 @@
         </div>
 
         <div class="table-responsive">
-          <table class="table table-sm table-hover align-middle mb-0" id="cohortsTable">
+          <table class="table table-sm table-hover align-middle mb-0 sticky-head" id="cohortsTable">
             <thead class="table-light">
               <tr>
                 <th>Name</th>
@@ -132,62 +141,61 @@
             </thead>
             <tbody>
               {% for ch in cohorts %}
-              {% set students_in_cohort = (student_counts.get(ch.id, 0) | int) %}
-              {% set marker_name = marker_map.get(ch.marker_id).username if marker_map.get(ch.marker_id) else '—' %}
-              <tr
-                data-name="{{ (ch.name or '')|lower }}"
-                data-course="{{ ch.course|lower }}"
-                data-marker="{{ marker_name|lower }}"
-                data-status="{{ 'active' if ch.active else 'inactive' }}"
-              >
-                <td class="fw-semibold">{{ ch.name or '—' }}</td>
-                <td>{{ ch.course }}</td>
-                <td>{{ marker_name }}</td>
-                <td>{{ ch.start_date.strftime('%d %b %Y') }}</td>
-                <td class="passcode d-flex align-items-center gap-2">
-                  <span>{{ ch.passcode }}</span>
-                  <button class="btn btn-outline-secondary btn-sm" type="button" data-bs-toggle="tooltip" data-bs-title="Copy"
-                          onclick="copyText('{{ ch.passcode }}', this)" aria-label="Copy passcode">Copy</button>
-                </td>
-                <td class="text-center">{{ students_in_cohort }}</td>
-                <td>
-                  {% if ch.active %}<span class="badge bg-success">Active</span>
-                  {% else %}<span class="badge bg-secondary">Inactive</span>{% endif %}
-                </td>
-
-                <!-- Actions: two buttons side-by-side, delete centered below -->
-                <td class="actions">
-                  <div class="d-flex flex-column align-items-center gap-1">
-                    <div class="d-flex gap-1">
-                      <!-- Activate/Deactivate -->
-                      <form method="post" action="{{ url_for('admin_cohorts_toggle', cohort_id=ch.id) }}" class="d-inline">
-                        <button class="btn btn-outline-secondary btn-sm" data-bs-toggle="tooltip"
-                                data-bs-title="{{ 'Deactivate' if ch.active else 'Activate' }}" aria-label="Toggle status">
-                          {% if ch.active %}⏸{% else %}▶{% endif %}
-                        </button>
-                      </form>
-                      <!-- Regenerate -->
-                      <form method="post" action="{{ url_for('admin_cohorts_regen', cohort_id=ch.id) }}" class="d-inline"
-                            onsubmit="return confirm('Generate a new passcode for {{ ch.name or ch.course }}? The old one will stop working.');">
-                        <button class="btn btn-outline-secondary btn-sm" data-bs-toggle="tooltip"
-                                data-bs-title="Regenerate passcode" aria-label="Regenerate">♻</button>
-                      </form>
+                {% set students_in_cohort = (student_counts.get(ch.id, 0) | int) %}
+                {% set marker_name = marker_map.get(ch.marker_id).username if marker_map.get(ch.marker_id) else '—' %}
+                <tr
+                  data-name="{{ (ch.name or '')|lower }}"
+                  data-course="{{ ch.course|lower }}"
+                  data-marker="{{ marker_name|lower }}"
+                  data-status="{{ 'active' if ch.active else 'inactive' }}"
+                >
+                  <td class="fw-semibold">{{ ch.name or '—' }}</td>
+                  <td>{{ ch.course }}</td>
+                  <td>{{ marker_name }}</td>
+                  <td>{{ ch.start_date.strftime('%d %b %Y') }}</td>
+                  <td class="passcode d-flex align-items-center gap-2">
+                    <span>{{ ch.passcode }}</span>
+                    <button class="btn btn-outline-secondary btn-sm" type="button"
+                            data-bs-toggle="tooltip" data-bs-title="Copy"
+                            onclick="copyText('{{ ch.passcode }}', this)" aria-label="Copy passcode">Copy</button>
+                  </td>
+                  <td class="text-center">{{ students_in_cohort }}</td>
+                  <td>
+                    {% if ch.active %}<span class="badge bg-success">Active</span>
+                    {% else %}<span class="badge bg-secondary">Inactive</span>{% endif %}
+                  </td>
+                  <td class="actions">
+                    <div class="d-flex flex-column align-items-center gap-1">
+                      <div class="d-flex gap-1">
+                        <!-- Activate/Deactivate -->
+                        <form method="post" action="{{ url_for('admin_cohorts_toggle', cohort_id=ch.id) }}" class="d-inline">
+                          <button class="btn btn-outline-secondary btn-sm" data-bs-toggle="tooltip"
+                                  data-bs-title="{{ 'Deactivate' if ch.active else 'Activate' }}" aria-label="Toggle status">
+                            {% if ch.active %}⏸{% else %}▶{% endif %}
+                          </button>
+                        </form>
+                        <!-- Regenerate -->
+                        <form method="post" action="{{ url_for('admin_cohorts_regen', cohort_id=ch.id) }}" class="d-inline"
+                              onsubmit="return confirm('Generate a new passcode for {{ ch.name or ch.course }}? The old one will stop working.');">
+                          <button class="btn btn-outline-secondary btn-sm" data-bs-toggle="tooltip"
+                                  data-bs-title="Regenerate passcode" aria-label="Regenerate">♻</button>
+                        </form>
+                      </div>
+                      <!-- Delete centered below -->
+                      {% set can_delete = students_in_cohort == 0 %}
+                      <button class="btn btn-outline-danger btn-sm mt-1"
+                              {% if not can_delete %}
+                                disabled data-bs-toggle="tooltip" data-bs-title="Remove or reassign {{ students_in_cohort }} student(s) first"
+                              {% else %}
+                                onclick="openDeleteModal({{ ch.id }}, '{{ (ch.name or ch.course)|e }}')"
+                              {% endif %}
+                              aria-label="Delete cohort">🗑</button>
                     </div>
-                    <!-- Delete centered below -->
-                    {% set can_delete = students_in_cohort == 0 %}
-                    <button class="btn btn-outline-danger btn-sm mt-1"
-                            {% if not can_delete %}
-                              disabled data-bs-toggle="tooltip" data-bs-title="Remove or reassign {{ students_in_cohort }} student(s) first"
-                            {% else %}
-                              onclick="openDeleteModal({{ ch.id }}, '{{ (ch.name or ch.course)|e }}')"
-                            {% endif %}
-                            aria-label="Delete cohort">🗑</button>
-                  </div>
-                </td>
-              </tr>
+                  </td>
+                </tr>
               {% endfor %}
               {% if cohorts|length == 0 %}
-              <tr><td colspan="8" class="text-center muted py-4">No cohorts yet. Create one on the left.</td></tr>
+                <tr><td colspan="8" class="text-center muted py-4">No cohorts yet. Create one on the left.</td></tr>
               {% endif %}
             </tbody>
           </table>
@@ -223,7 +231,7 @@
 </div>
 
 <script>
-  // Tooltips
+  // Enable tooltips
   document.addEventListener('DOMContentLoaded', function () {
     document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(el => new bootstrap.Tooltip(el));
   });
@@ -237,30 +245,47 @@
     }).catch(()=>{});
   }
 
-  // Filters & search
+  // Filters & search — clear on load so new cohorts are visible
   (function(){
-    const q = document.getElementById('searchInput');
+    const q  = document.getElementById('searchInput');
     const fc = document.getElementById('filterCourse');
     const fm = document.getElementById('filterMarker');
     const fs = document.getElementById('filterStatus');
+    const resetBtn = document.getElementById('resetFilters');
     const rows = Array.from(document.querySelectorAll('#cohortsTable tbody tr'));
     const norm = s => (s||'').toString().trim().toLowerCase();
 
     function apply(){
-      const qq = norm(q.value), c = norm(fc ? fc.value : ''), m = norm(fm ? fm.value : ''), s = norm(fs ? fs.value : '');
+      const term = norm(q?.value || '');
+      const course = norm(fc?.value || '');
+      const marker = norm(fm?.value || '');
+      const status = norm(fs?.value || '');
       rows.forEach(tr=>{
         const ok =
-          (!qq || (tr.dataset.name.includes(qq) || (tr.innerText||'').toLowerCase().includes(qq))) &&
-          (!c  || tr.dataset.course === c) &&
-          (!m  || tr.dataset.marker === m) &&
-          (!s  || tr.dataset.status === s);
+          (!term || tr.innerText.toLowerCase().includes(term)) &&
+          (!course || tr.dataset.course === course) &&
+          (!marker || tr.dataset.marker === marker) &&
+          (!status || tr.dataset.status === status);
         tr.style.display = ok ? '' : 'none';
       });
     }
+
+    function resetAll(){
+      if (q) q.value = '';
+      if (fc) fc.value = '';
+      if (fm) fm.value = '';
+      if (fs) fs.value = '';
+      apply();
+    }
+
     [q, fc, fm, fs].forEach(el => el && (el.addEventListener('input', apply), el.addEventListener('change', apply)));
+    if (resetBtn) resetBtn.addEventListener('click', resetAll);
+
+    // Ensure nothing is hidden by persisted values
+    resetAll();
   })();
 
-  // Delete modal
+  // Delete modal wiring
   function openDeleteModal(id, name){
     const form = document.getElementById('deleteCohortForm');
     form.action = "{{ url_for('admin_cohorts_delete', cohort_id=0) }}".replace('/0/', '/' + id + '/');
@@ -268,21 +293,23 @@
     new bootstrap.Modal(document.getElementById('deleteCohortModal')).show();
   }
 
-  // Auto-suggest name from course + date
+  // Auto-suggest cohort name (course + month + year) if left blank
   (function(){
-    const course = document.getElementById('courseSelect');
-    const date = document.getElementById('startDate');
-    const name = document.getElementById('nameInput');
+    const courseEl = document.getElementById('courseSelect');
+    const dateEl   = document.getElementById('startDate');
+    const nameEl   = document.getElementById('nameInput');
     const mon = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
     function suggest(){
-      if ((name.value||'').trim() !== '') return;
-      if (!course.value || !date.value) return;
-      const d = new Date(date.value + 'T00:00:00');
+      if (!nameEl || (nameEl.value||'').trim() !== '') return;
+      const course = courseEl?.value || '';
+      const dstr = dateEl?.value || '';
+      if (!course || !dstr) return;
+      const d = new Date(dstr + 'T00:00:00');
       if (isNaN(d)) return;
-      name.value = course.value + ' ' + mon[d.getMonth()] + ' ' + d.getFullYear();
+      nameEl.value = course + ' ' + mon[d.getMonth()] + ' ' + d.getFullYear();
     }
-    course.addEventListener('change', suggest);
-    date.addEventListener('change', suggest);
+    courseEl?.addEventListener('change', suggest);
+    dateEl?.addEventListener('change', suggest);
   })();
 </script>
 {% endblock %}
