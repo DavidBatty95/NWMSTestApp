@@ -2,94 +2,162 @@
 {% block title %}Admin · Settings{% endblock %}
 
 {% block content %}
-<h2 class="mb-3">Settings</h2>
-<p class="text-muted">Manage courses, workbook counts, and questions per workbook.</p>
+<style>
+  :root{ --muted:#6c757d; --border:#e9ecef; --ink:#1f2328; }
+  .page-head{display:flex;align-items:flex-end;justify-content:space-between;margin-bottom:.75rem}
+  .page-head h2{margin:0;font-weight:700}
+  .page-head .sub{margin:0;color:var(--muted)}
+
+  .toolbar{position:sticky;top:16px;z-index:9}
+  .card{border-radius:12px;border:1px solid var(--border)}
+  .card-header{background:#fff}
+
+  /* Accordion (clean) */
+  .accordion-item{border:1px solid var(--border);border-radius:12px;overflow:hidden}
+  .accordion-button{padding:.7rem .9rem}
+  .accordion-button:not(.collapsed){box-shadow:none}
+  .acc-title{display:flex;align-items:center;gap:.6rem;flex-wrap:wrap}
+  .acc-title .name{font-weight:700}
+  .wb-pill{
+    display:inline-block;padding:.15rem .5rem;border:1px solid var(--border);
+    border-radius:999px;background:#f7f8f9;font-weight:600;font-size:.8rem;color:#495057
+  }
+
+  /* Tables & forms */
+  .table-sm th,.table-sm td{padding:.45rem .6rem;vertical-align:middle}
+  .help{color:var(--muted);font-size:.85rem}
+  .form-inline-row{display:flex;gap:.6rem;flex-wrap:wrap}
+  .form-inline-row .form-control{min-width:180px}
+  .inline-actions{margin-left:auto;display:flex;gap:.5rem}
+
+  /* Subtle focus */
+  .form-control:focus,.form-select:focus{box-shadow:0 0 0 .15rem rgba(76,175,80,.12);border-color:#cfead3}
+</style>
+
+<div class="page-head">
+  <div>
+    <h2>Settings</h2>
+    <p class="sub">Manage courses, workbook counts, and questions per workbook.</p>
+  </div>
+</div>
+
+<!-- Toolbar -->
+<div class="toolbar mb-3">
+  <div class="card shadow-sm">
+    <div class="card-body py-3">
+      <div class="row g-2 align-items-end">
+        <div class="col-lg-7">
+          <label class="form-label mb-1">Search courses</label>
+          <input id="courseSearch" class="form-control" type="search" placeholder="Search by code or name…">
+        </div>
+        <div class="col-lg-5 d-flex gap-2 justify-content-lg-end">
+          <button id="btnExpandAll" class="btn btn-outline-secondary btn-sm">Expand all</button>
+          <button id="btnCollapseAll" class="btn btn-outline-secondary btn-sm">Collapse all</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
 
 <div class="row g-3">
   <!-- Add course -->
   <div class="col-12 col-lg-4">
     <div class="card shadow-sm h-100">
-      <div class="card-header"><h5 class="mb-0">Add Course</h5></div>
+      <div class="card-header">
+        <h5 class="mb-0">Add Course</h5>
+      </div>
       <div class="card-body">
-        <form method="post" class="vstack gap-2">
+        <form method="post" id="addCourseForm" class="vstack gap-2">
           <input type="hidden" name="action" value="add_course">
           <div>
             <label class="form-label">Course Code</label>
-            <input name="code" class="form-control" placeholder="e.g. FREC4" required>
+            <input name="code" id="codeInput" class="form-control" placeholder="e.g. FREC4" maxlength="32" required>
+            <div class="help">Auto-uppercased; short and unique.</div>
           </div>
           <div>
             <label class="form-label">Course Name</label>
-            <input name="name" class="form-control" placeholder="Display name" required>
+            <input name="name" class="form-control" placeholder="Display name" maxlength="120" required>
           </div>
           <div>
             <label class="form-label"># Workbooks</label>
             <input type="number" name="workbooks_count" class="form-control" min="1" value="3" required>
           </div>
-          <button class="btn btn-primary mt-2">Add Course</button>
+          <button class="btn btn-success mt-1">Add Course</button>
         </form>
       </div>
     </div>
   </div>
 
-  <!-- Existing courses -->
+  <!-- Courses -->
   <div class="col-12 col-lg-8">
     <div class="card shadow-sm">
       <div class="card-header d-flex align-items-center justify-content-between">
         <h5 class="mb-0">Courses</h5>
-        <small class="text-muted">Edit number of workbooks/questions</small>
+        <small class="text-muted">Edit basics and questions</small>
       </div>
       <div class="card-body">
         {% if courses and courses|length > 0 %}
           <div class="accordion" id="courseAccordion">
             {% for c in courses %}
-              <div class="accordion-item mb-2 border rounded">
+              {% set qrows = qmap[c.id] if qmap and qmap[c.id] else [] %}
+              <div class="accordion-item mb-2 course-item" data-course="{{ (c.code ~ ' ' ~ c.name)|lower }}">
                 <h2 class="accordion-header" id="h-{{ c.id }}">
                   <button class="accordion-button collapsed" type="button"
                           data-bs-toggle="collapse" data-bs-target="#col-{{ c.id }}"
                           aria-expanded="false" aria-controls="col-{{ c.id }}">
-                    <div class="d-flex flex-column">
-                      <span class="fw-semibold">{{ c.code }} — {{ c.name }}</span>
-                      <small class="text-muted">{{ c.workbooks_count }} workbooks</small>
+                    <div class="acc-title">
+                      <span class="name">{{ c.code }} — {{ c.name }}</span>
+                      <span class="wb-pill" data-wb-pill="{{ c.id }}">Workbooks: {{ c.workbooks_count }}</span>
                     </div>
                   </button>
                 </h2>
                 <div id="col-{{ c.id }}" class="accordion-collapse collapse" aria-labelledby="h-{{ c.id }}" data-bs-parent="#courseAccordion">
                   <div class="accordion-body">
 
-                    <!-- Update course basics -->
-                    <form method="post" class="row g-2 align-items-end mb-3">
+                    <!-- Basics -->
+                    <form method="post" class="form-inline-row align-items-end mb-3 course-basics" data-course-id="{{ c.id }}">
                       <input type="hidden" name="action" value="update_course">
                       <input type="hidden" name="course_id" value="{{ c.id }}">
-                      <div class="col-md-5">
+                      <div class="flex-grow-1">
                         <label class="form-label">Name</label>
                         <input name="name" class="form-control" value="{{ c.name }}" required>
                       </div>
-                      <div class="col-md-3">
+                      <div style="width:160px">
                         <label class="form-label"># Workbooks</label>
-                        <input type="number" name="workbooks_count" class="form-control" min="1" value="{{ c.workbooks_count }}" required>
+                        <input type="number" name="workbooks_count" class="form-control js-wb-count" min="1" value="{{ c.workbooks_count }}" required>
+                        <div class="help">Preview updates below.</div>
                       </div>
-                      <div class="col-md-4 text-end">
-                        <button class="btn btn-outline-primary">Save Course</button>
+                      <div class="inline-actions">
+                        <button class="btn btn-outline-primary btn-sm">Save Course</button>
                       </div>
                     </form>
 
-                    <!-- Question counts per workbook -->
-                    <form method="post">
+                    <!-- Questions per workbook -->
+                    <form method="post" class="question-form" data-course-id="{{ c.id }}">
                       <input type="hidden" name="action" value="set_questions">
                       <input type="hidden" name="course_id" value="{{ c.id }}">
+
+                      <div class="d-flex align-items-center justify-content-between mb-2 flex-wrap gap-2">
+                        <div class="help">Set the number of questions for each workbook.</div>
+                        <div class="d-flex align-items-center gap-2">
+                          <label for="applyAll_{{ c.id }}" class="form-label mb-0">Apply to all:</label>
+                          <input id="applyAll_{{ c.id }}" type="number" min="1" class="form-control form-control-sm js-apply-all" style="width:96px" placeholder="10" data-target="#qtable-{{ c.id }}">
+                          <button type="button" class="btn btn-sm btn-outline-secondary js-apply-btn" data-target="#qtable-{{ c.id }}">Apply</button>
+                        </div>
+                      </div>
+
                       <div class="table-responsive">
-                        <table class="table table-sm align-middle mb-2">
+                        <table class="table table-sm align-middle mb-2 qtable" id="qtable-{{ c.id }}">
                           <thead class="table-light">
                             <tr>
-                              <th style="width: 160px;">Workbook</th>
-                              <th style="width: 200px;">Question Count</th>
+                              <th style="width: 170px;">Workbook</th>
+                              <th style="width: 220px;">Question Count</th>
                             </tr>
                           </thead>
                           <tbody>
-                            {% set qrows = qmap[c.id] if qmap and qmap[c.id] else [] %}
                             {% for i in range(1, c.workbooks_count + 1) %}
                               {% set row = (qrows | selectattr('workbook_number', 'equalto', i) | list | first) %}
-                              <tr>
+                              <tr data-wb="{{ i }}">
                                 <td>Workbook {{ i }}</td>
                                 <td>
                                   <input type="number" min="1" class="form-control form-control-sm"
@@ -99,16 +167,20 @@
                               </tr>
                             {% endfor %}
                           </tbody>
+                          <tfoot>
+                            <tr>
+                              <td class="text-muted small">Tip: “Apply to all” sets every row above.</td>
+                              <td class="text-end">
+                                <button class="btn btn-success btn-sm">Save Question Counts</button>
+                              </td>
+                            </tr>
+                          </tfoot>
                         </table>
-                      </div>
-                      <div class="d-flex justify-content-between">
-                        <div class="text-danger small">Changing workbook count above will add/remove rows after saving.</div>
-                        <button class="btn btn-success">Save Question Counts</button>
                       </div>
                     </form>
 
-                    <!-- Danger zone -->
-                    <form method="post" class="mt-3"
+                    <!-- Danger -->
+                    <form method="post" class="mt-2"
                           onsubmit="return confirm('Delete course {{ c.code }}? This cannot be undone.');">
                       <input type="hidden" name="action" value="delete_course">
                       <input type="hidden" name="course_id" value="{{ c.id }}">
@@ -128,9 +200,85 @@
   </div>
 </div>
 
-<style>
-.accordion-item { border-radius: 12px; overflow: hidden; }
-.accordion-button { padding-top:.8rem; padding-bottom:.8rem; }
-.table td, .table th { vertical-align: middle; }
-</style>
+<script>
+(function(){
+  // Auto-uppercase & strip spaces for course code
+  const codeInput = document.getElementById('codeInput');
+  if (codeInput){
+    codeInput.addEventListener('input', () => {
+      codeInput.value = codeInput.value.toUpperCase().replace(/\s+/g,'');
+    });
+  }
+
+  // Search courses
+  const search = document.getElementById('courseSearch');
+  function filterCourses(){
+    const term = (search.value || '').toLowerCase().trim();
+    document.querySelectorAll('.course-item').forEach(item=>{
+      const hay = (item.dataset.course || '').toLowerCase();
+      item.style.display = (!term || hay.includes(term)) ? '' : 'none';
+    });
+  }
+  if (search){ search.addEventListener('input', filterCourses); filterCourses(); }
+
+  // Expand / Collapse all
+  const expandAll = document.getElementById('btnExpandAll');
+  const collapseAll = document.getElementById('btnCollapseAll');
+  function setAll(open){
+    document.querySelectorAll('#courseAccordion .accordion-collapse').forEach(col=>{
+      const shown = col.classList.contains('show');
+      if (open && !shown){ new bootstrap.Collapse(col, {toggle:true}); }
+      if (!open && shown){ new bootstrap.Collapse(col, {toggle:true}); }
+    });
+  }
+  if (expandAll) expandAll.addEventListener('click', ()=>setAll(true));
+  if (collapseAll) collapseAll.addEventListener('click', ()=>setAll(false));
+
+  // Apply-to-all
+  document.querySelectorAll('.js-apply-btn').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      const table = document.querySelector(btn.getAttribute('data-target'));
+      if (!table) return;
+      const input = btn.previousElementSibling;
+      const val = parseInt(input.value, 10);
+      if (!val || val < 1) return;
+      table.querySelectorAll('tbody input[type="number"]').forEach(i => i.value = val);
+    });
+  });
+
+  // Live preview rows & update the header pill when # Workbooks changes
+  document.querySelectorAll('.course-basics .js-wb-count').forEach(input=>{
+    input.addEventListener('input', ()=>{
+      const form = input.closest('.course-basics');
+      const courseId = form?.dataset?.courseId;
+      const qtable = document.querySelector(`#qtable-${courseId}`);
+      const pill = document.querySelector(`.wb-pill[data-wb-pill="${courseId}"]`);
+      if (!qtable) return;
+      const tbody = qtable.querySelector('tbody');
+      let n = parseInt(input.value, 10);
+      if (!n || n < 1) n = 1;
+
+      // Update pill text inline with name
+      if (pill) pill.textContent = `Workbooks: ${n}`;
+
+      const current = tbody.querySelectorAll('tr[data-wb]').length;
+
+      // Add rows
+      for (let i=current+1; i<=n; i++){
+        const tr = document.createElement('tr');
+        tr.setAttribute('data-wb', String(i));
+        tr.innerHTML = `
+          <td>Workbook ${i}</td>
+          <td><input type="number" min="1" class="form-control form-control-sm" name="qcount_${i}" value="10"></td>`;
+        tbody.appendChild(tr);
+      }
+      // Remove rows
+      for (let i=current; i>n; i--){
+        const tr = tbody.querySelector(\`tr[data-wb="\${i}"]\`);
+        if (tr) tr.remove();
+      }
+    });
+  });
+})();
+</script>
 {% endblock %}

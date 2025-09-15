@@ -3,121 +3,286 @@
 
 {% block content %}
 <style>
-  .stat-card { border-radius:12px; border:1px solid #e9ecef; }
-  .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace; }
-  .table-sm td, .table-sm th { padding: .45rem .6rem; }
+  .page-head { display:flex; align-items:center; justify-content:space-between; gap:1rem; margin-bottom:1rem; }
+  .page-head h2 { margin:0; font-weight:600; }
+  .muted { color:#6c757d; }
+  .card { border-radius:12px; }
+  .thin { --bs-border-width: 1px; }
+  .chip { display:inline-block; padding:.3rem .6rem; border-radius:999px; border:1px solid #e9ecef; background:#fff; font-weight:600; font-size:.85rem; }
+  .table-sm td, .table-sm th { padding:.5rem .6rem; vertical-align: middle; } /* <- vertical centering fallback */
+  .passcode { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace; }
+  td.actions { vertical-align: middle !important; text-align:center; white-space:nowrap; }
+  td.actions .btn { padding:.25rem .45rem; }
+  .filters-caret { font-size:.85rem; }
 </style>
 
-<div class="d-flex align-items-center justify-content-between mb-3">
+{# ---- Safe counts (Jinja-only) ---- #}
+{% set active_count = cohorts|selectattr('active')|list|length %}
+{% set inactive_count = cohorts|rejectattr('active')|list|length %}
+{% set ns = namespace(total_students=0) %}
+{% for c in cohorts %}
+  {% set ns.total_students = ns.total_students + (student_counts.get(c.id, 0) | int) %}
+{% endfor %}
+
+<div class="page-head">
   <div>
-    <h2 class="mb-0">Cohorts Editor</h2>
-    <div class="text-muted small">Create a class with course, marker, and start date. A passcode will be generated for student registration.</div>
+    <h2>Cohorts</h2>
+    <div class="muted">Create a class, assign a marker, and manage passcodes.</div>
   </div>
-  <a href="{{ url_for('admin_dashboard') }}" class="btn btn-light btn-sm">← Back to Dashboard</a>
+  <a href="{{ url_for('admin_dashboard') }}" class="btn btn-light btn-sm">← Dashboard</a>
 </div>
 
 <div class="row g-3">
-  <div class="col-lg-5">
-    <div class="card shadow-sm stat-card">
+  <!-- Create -->
+  <div class="col-lg-4">
+    <div class="card thin shadow-sm">
       <div class="card-body">
-        <h5 class="mb-3">Create New Cohort</h5>
-        <form method="post" class="row g-3">
-          <div class="col-12">
+        <h5 class="mb-3">Create Cohort</h5>
+        <form method="post" class="vstack gap-3" id="createCohortForm">
+          <div>
             <label class="form-label">Course</label>
-            <select name="course" class="form-select" required>
-              <option value="" selected disabled>Choose…</option>
-              {% for c in courses %}
-              <option value="{{ c }}">{{ c }}</option>
-              {% endfor %}
+            <select name="course" id="courseSelect" class="form-select" required>
+              <option value="" disabled selected>Choose…</option>
+              {% for c in courses %}<option value="{{ c }}">{{ c }}</option>{% endfor %}
             </select>
           </div>
-          <div class="col-12">
-            <label class="form-label">Assign Marker</label>
-            <select name="marker_id" class="form-select" required>
-              <option value="" selected disabled>Choose a marker…</option>
-              {% for m in markers %}
-              <option value="{{ m.id }}">{{ m.username }} ({{ m.email }})</option>
-              {% endfor %}
+          <div>
+            <label class="form-label">Marker</label>
+            <select name="marker_id" id="markerSelect" class="form-select" required>
+              <option value="" disabled selected>Choose…</option>
+              {% for m in markers %}<option value="{{ m.id }}">{{ m.username }} ({{ m.email }})</option>{% endfor %}
             </select>
           </div>
-          <div class="col-12">
-            <label class="form-label">Course Start Date</label>
-            <input type="date" name="start_date" class="form-control" required>
+          <div>
+            <label class="form-label">Start date</label>
+            <input type="date" name="start_date" id="startDate" class="form-control" required>
           </div>
-          <div class="col-12">
-            <label class="form-label">Cohort Name <span class="text-muted">(optional)</span></label>
-            <input type="text" name="name" class="form-control" placeholder="e.g., FREC4 Sep 2025 AM">
+          <div>
+            <label class="form-label">Name <span class="muted">(optional)</span></label>
+            <input type="text" name="name" id="nameInput" class="form-control" placeholder="e.g., FREC4 Sep 2025 AM">
+            <div class="form-text">Leave blank to auto-suggest from course & date.</div>
           </div>
-          <div class="col-12">
-            <button class="btn btn-success">Create Cohort & Generate Passcode</button>
+          <div class="d-flex justify-content-end gap-2">
+            <button type="reset" class="btn btn-outline-secondary btn-sm">Reset</button>
+            <button class="btn btn-success btn-sm">Create &amp; generate passcode</button>
           </div>
         </form>
+        <div class="d-flex gap-2 flex-wrap mt-3">
+          <span class="chip">Active: {{ active_count }}</span>
+          <span class="chip">Inactive: {{ inactive_count }}</span>
+          <span class="chip">Students: {{ ns.total_students }}</span>
+        </div>
       </div>
     </div>
   </div>
 
-  <div class="col-lg-7">
-    <div class="card shadow-sm">
+  <!-- List -->
+  <div class="col-lg-8">
+    <div class="card thin shadow-sm">
       <div class="card-body">
-        <div class="d-flex align-items-center justify-content-between mb-2">
-          <h5 class="mb-0">Existing Cohorts</h5>
+        <div class="d-flex align-items-end justify-content-between gap-2 mb-3">
+          <div class="flex-grow-1">
+            <label class="form-label mb-1">Search</label>
+            <input id="searchInput" type="text" class="form-control" placeholder="Search name, passcode, marker…">
+          </div>
+          <div>
+            <button class="btn btn-outline-secondary btn-sm" type="button" data-bs-toggle="collapse" data-bs-target="#moreFilters" aria-expanded="false">
+              Filters <span class="filters-caret">▾</span>
+            </button>
+          </div>
+        </div>
+
+        <div class="collapse" id="moreFilters">
+          <div class="row g-2 mb-3">
+            <div class="col-md-4">
+              <select id="filterCourse" class="form-select">
+                <option value="">All courses</option>
+                {% for c in courses %}<option value="{{ c }}">{{ c }}</option>{% endfor %}
+              </select>
+            </div>
+            <div class="col-md-4">
+              <select id="filterMarker" class="form-select">
+                <option value="">All markers</option>
+                {% for m in markers %}<option value="{{ m.username }}">{{ m.username }}</option>{% endfor %}
+              </select>
+            </div>
+            <div class="col-md-4">
+              <select id="filterStatus" class="form-select">
+                <option value="">All status</option>
+                <option value="active">Active</option>
+                <option value="inactive">Inactive</option>
+              </select>
+            </div>
+          </div>
         </div>
 
         <div class="table-responsive">
-          <table class="table table-sm table-hover align-middle mb-0">
+          <table class="table table-sm table-hover align-middle mb-0" id="cohortsTable">
             <thead class="table-light">
               <tr>
                 <th>Name</th>
                 <th>Course</th>
                 <th>Marker</th>
-                <th>Start Date</th>
+                <th>Start</th>
                 <th>Passcode</th>
+                <th class="text-center">Students</th>
                 <th>Status</th>
-                <th class="text-end">Actions</th>
+                <th class="text-end" style="width:120px;">Actions</th>
               </tr>
             </thead>
             <tbody>
               {% for ch in cohorts %}
-              <tr>
+              {% set students_in_cohort = (student_counts.get(ch.id, 0) | int) %}
+              {% set marker_name = marker_map.get(ch.marker_id).username if marker_map.get(ch.marker_id) else '—' %}
+              <tr
+                data-name="{{ (ch.name or '')|lower }}"
+                data-course="{{ ch.course|lower }}"
+                data-marker="{{ marker_name|lower }}"
+                data-status="{{ 'active' if ch.active else 'inactive' }}"
+              >
                 <td class="fw-semibold">{{ ch.name or '—' }}</td>
                 <td>{{ ch.course }}</td>
-                <td>{{ marker_map.get(ch.marker_id).username if marker_map.get(ch.marker_id) else '—' }}</td>
+                <td>{{ marker_name }}</td>
                 <td>{{ ch.start_date.strftime('%d %b %Y') }}</td>
-                <td class="mono">{{ ch.passcode }}</td>
-                <td>
-                  {% if ch.active %}
-                    <span class="badge bg-success">Active</span>
-                  {% else %}
-                    <span class="badge bg-secondary">Inactive</span>
-                  {% endif %}
+                <td class="passcode d-flex align-items-center gap-2">
+                  <span>{{ ch.passcode }}</span>
+                  <button class="btn btn-outline-secondary btn-sm" type="button" data-bs-toggle="tooltip" data-bs-title="Copy"
+                          onclick="copyText('{{ ch.passcode }}', this)" aria-label="Copy passcode">Copy</button>
                 </td>
-                <td class="text-end">
-                  <form method="post" action="{{ url_for('admin_cohorts_toggle', cohort_id=ch.id) }}" class="d-inline">
-                    <button class="btn btn-sm btn-outline-{{ 'secondary' if ch.active else 'success' }}">
-                      {{ 'Deactivate' if ch.active else 'Activate' }}
-                    </button>
-                  </form>
-                  <form method="post" action="{{ url_for('admin_cohorts_regen', cohort_id=ch.id) }}" class="d-inline"
-                        onsubmit="return confirm('Generate a new passcode for this cohort? The old one will stop working.');">
-                    <button class="btn btn-sm btn-outline-primary">Regenerate</button>
-                  </form>
+                <td class="text-center">{{ students_in_cohort }}</td>
+                <td>
+                  {% if ch.active %}<span class="badge bg-success">Active</span>
+                  {% else %}<span class="badge bg-secondary">Inactive</span>{% endif %}
+                </td>
+
+                <!-- Actions: two buttons side-by-side, delete centered below -->
+                <td class="actions">
+                  <div class="d-flex flex-column align-items-center gap-1">
+                    <div class="d-flex gap-1">
+                      <!-- Activate/Deactivate -->
+                      <form method="post" action="{{ url_for('admin_cohorts_toggle', cohort_id=ch.id) }}" class="d-inline">
+                        <button class="btn btn-outline-secondary btn-sm" data-bs-toggle="tooltip"
+                                data-bs-title="{{ 'Deactivate' if ch.active else 'Activate' }}" aria-label="Toggle status">
+                          {% if ch.active %}⏸{% else %}▶{% endif %}
+                        </button>
+                      </form>
+                      <!-- Regenerate -->
+                      <form method="post" action="{{ url_for('admin_cohorts_regen', cohort_id=ch.id) }}" class="d-inline"
+                            onsubmit="return confirm('Generate a new passcode for {{ ch.name or ch.course }}? The old one will stop working.');">
+                        <button class="btn btn-outline-secondary btn-sm" data-bs-toggle="tooltip"
+                                data-bs-title="Regenerate passcode" aria-label="Regenerate">♻</button>
+                      </form>
+                    </div>
+                    <!-- Delete centered below -->
+                    {% set can_delete = students_in_cohort == 0 %}
+                    <button class="btn btn-outline-danger btn-sm mt-1"
+                            {% if not can_delete %}
+                              disabled data-bs-toggle="tooltip" data-bs-title="Remove or reassign {{ students_in_cohort }} student(s) first"
+                            {% else %}
+                              onclick="openDeleteModal({{ ch.id }}, '{{ (ch.name or ch.course)|e }}')"
+                            {% endif %}
+                            aria-label="Delete cohort">🗑</button>
+                  </div>
                 </td>
               </tr>
               {% endfor %}
               {% if cohorts|length == 0 %}
-              <tr>
-                <td colspan="7" class="text-center text-muted py-4">No cohorts yet. Create one on the left.</td>
-              </tr>
+              <tr><td colspan="8" class="text-center muted py-4">No cohorts yet. Create one on the left.</td></tr>
               {% endif %}
             </tbody>
           </table>
         </div>
 
-        <div class="small text-muted mt-2">
-          Tip: Share the passcode with students. When they register, they can enter it to be enrolled in the correct course and assigned to the right marker automatically.
+        <div class="muted small mt-2">
+          Share the passcode with students; they’ll be enrolled in the right course and assigned to the marker automatically.
         </div>
       </div>
     </div>
   </div>
 </div>
+
+<!-- Delete modal -->
+<div class="modal fade" id="deleteCohortModal" tabindex="-1" aria-labelledby="deleteCohortLabel" aria-hidden="true">
+  <div class="modal-dialog">
+    <form method="post" id="deleteCohortForm">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="deleteCohortLabel">Delete cohort</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          Are you sure you want to delete <strong id="cohortName"></strong>? This cannot be undone.
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-danger">Yes, delete</button>
+        </div>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+  // Tooltips
+  document.addEventListener('DOMContentLoaded', function () {
+    document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(el => new bootstrap.Tooltip(el));
+  });
+
+  // Copy helper
+  function copyText(text, btn){
+    navigator.clipboard.writeText(text).then(function(){
+      let tip = bootstrap.Tooltip.getInstance(btn) || new bootstrap.Tooltip(btn);
+      btn.setAttribute('data-bs-title', 'Copied!');
+      tip.show(); setTimeout(()=>{ tip.hide(); btn.setAttribute('data-bs-title', 'Copy'); }, 900);
+    }).catch(()=>{});
+  }
+
+  // Filters & search
+  (function(){
+    const q = document.getElementById('searchInput');
+    const fc = document.getElementById('filterCourse');
+    const fm = document.getElementById('filterMarker');
+    const fs = document.getElementById('filterStatus');
+    const rows = Array.from(document.querySelectorAll('#cohortsTable tbody tr'));
+    const norm = s => (s||'').toString().trim().toLowerCase();
+
+    function apply(){
+      const qq = norm(q.value), c = norm(fc ? fc.value : ''), m = norm(fm ? fm.value : ''), s = norm(fs ? fs.value : '');
+      rows.forEach(tr=>{
+        const ok =
+          (!qq || (tr.dataset.name.includes(qq) || (tr.innerText||'').toLowerCase().includes(qq))) &&
+          (!c  || tr.dataset.course === c) &&
+          (!m  || tr.dataset.marker === m) &&
+          (!s  || tr.dataset.status === s);
+        tr.style.display = ok ? '' : 'none';
+      });
+    }
+    [q, fc, fm, fs].forEach(el => el && (el.addEventListener('input', apply), el.addEventListener('change', apply)));
+  })();
+
+  // Delete modal
+  function openDeleteModal(id, name){
+    const form = document.getElementById('deleteCohortForm');
+    form.action = "{{ url_for('admin_cohorts_delete', cohort_id=0) }}".replace('/0/', '/' + id + '/');
+    document.getElementById('cohortName').textContent = name || 'this cohort';
+    new bootstrap.Modal(document.getElementById('deleteCohortModal')).show();
+  }
+
+  // Auto-suggest name from course + date
+  (function(){
+    const course = document.getElementById('courseSelect');
+    const date = document.getElementById('startDate');
+    const name = document.getElementById('nameInput');
+    const mon = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    function suggest(){
+      if ((name.value||'').trim() !== '') return;
+      if (!course.value || !date.value) return;
+      const d = new Date(date.value + 'T00:00:00');
+      if (isNaN(d)) return;
+      name.value = course.value + ' ' + mon[d.getMonth()] + ' ' + d.getFullYear();
+    }
+    course.addEventListener('change', suggest);
+    date.addEventListener('change', suggest);
+  })();
+</script>
 {% endblock %}

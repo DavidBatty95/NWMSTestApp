@@ -2,51 +2,151 @@
 {% block title %}Admin · Assign Students{% endblock %}
 
 {% block content %}
-<h2 class="mb-3">Assign Students to Markers</h2>
+<style>
+  .page-head{display:flex;align-items:center;justify-content:space-between;gap:1rem;margin-bottom:1rem}
+  .page-head h2{margin:0;font-weight:600}
+  .chip{display:inline-block;padding:.35rem .6rem;border:1px solid #e9ecef;border-radius:999px;background:#fff;font-weight:600;font-size:.85rem}
+  .toolbar{position:sticky;top:16px;z-index:9}
+  .table-sm td,.table-sm th{padding:.55rem .65rem;vertical-align:middle}
 
-<div class="mb-3">
-  <input id="searchInput" class="form-control form-control-sm" type="search" placeholder="Search students, emails, markers…" aria-label="Search">
+  /* Student cell with inline cohort pill */
+  .student-cell{display:flex;align-items:center;gap:.5rem;min-width:200px;flex-wrap:wrap}
+  .student-name{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:220px}
+  .student-id{color:#6c757d}
+  .cohort-pill{
+    display:inline-flex;align-items:center;gap:.35rem;
+    padding:.2rem .5rem;border-radius:999px;
+    background:#eef2f4;border:1px solid #e1e7eb;
+    color:#495057;font-size:.75rem;white-space:nowrap;
+  }
+
+  .text-truncate-clip{max-width:280px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  @media (max-width:992px){
+    .student-name{max-width:170px}
+    .text-truncate-clip{max-width:220px}
+  }
+  @media (max-width:576px){
+    .student-name{max-width:140px}
+    .text-truncate-clip{max-width:160px}
+  }
+
+  .status-pill{font-size:.7rem}
+  .saving{opacity:.6;pointer-events:none}
+</style>
+
+{% set total = students|length %}
+{% set unassigned = 0 %}
+{% for s in students %}
+  {% if not current_marker_by_student.get(s.id) %}
+    {% set unassigned = unassigned + 1 %}
+  {% endif %}
+{% endfor %}
+
+{# distinct lists for filters #}
+{% set seen_courses = [] %}
+{% set seen_cohorts = [] %}
+
+<div class="page-head">
+  <div>
+    <h2 class="mb-0">Assign Students</h2>
+    <div class="text-muted small">Cohorts are shown on each student’s pill. Changes save instantly.</div>
+  </div>
+  <div class="d-flex gap-2 flex-wrap">
+    <span class="chip">Total: {{ total }}</span>
+    <span class="chip">Unassigned: {{ unassigned }}</span>
+  </div>
+</div>
+
+<div class="toolbar mb-3">
+  <div class="card shadow-sm">
+    <div class="card-body py-3">
+      <div class="row g-2 align-items-end">
+        <div class="col-lg-5">
+          <label class="form-label mb-1">Search</label>
+          <input id="searchInput" class="form-control" type="search" placeholder="Search students, emails, markers…" aria-label="Search">
+        </div>
+        <div class="col-6 col-lg-2">
+          <label class="form-label mb-1">Course</label>
+          <select id="filterCourse" class="form-select">
+            <option value="">All</option>
+            {% for s in students %}
+              {% if s.course and (s.course not in seen_courses) %}
+                {% set _ = seen_courses.append(s.course) %}
+                <option value="{{ s.course }}">{{ s.course }}</option>
+              {% endif %}
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-6 col-lg-3">
+          <label class="form-label mb-1">Cohort</label>
+          <select id="filterCohort" class="form-select">
+            <option value="">All</option>
+            {% for s in students %}
+              {% set cname = (s.cohort.name if s.cohort else 'No Cohort') %}
+              {% if cname not in seen_cohorts %}
+                {% set _ = seen_cohorts.append(cname) %}
+                <option value="{{ cname }}">{{ cname }}</option>
+              {% endif %}
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-lg-2">
+          <label class="form-label mb-1">Unassigned</label>
+          <div class="form-check">
+            <input class="form-check-input" type="checkbox" id="toggleUnassigned">
+            <label class="form-check-label" for="toggleUnassigned">Show only</label>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
 </div>
 
 <div class="card shadow-sm">
   <div class="table-responsive">
-    <table class="table table-sm align-middle mb-0 admin-students-table">
-      <thead class="table-light">
+    <table class="table table-sm table-hover align-middle mb-0 admin-students-table" id="assignTable">
+      <thead class="table-light sticky-top">
         <tr class="small text-uppercase">
-          <th style="min-width:200px;">Student (ID)</th>
-          <th style="min-width:200px;">Email</th>
-          <th style="min-width:90px;">Course</th>
-          <th style="min-width:260px;">Assigned Marker</th>
-          <th class="text-end" style="width:90px;">Action</th>
+          <th>Student</th>
+          <th style="min-width:230px;">Email</th>
+          <th style="min-width:110px;">Course</th>
+          <th style="min-width:300px;">Assigned Marker</th>
+          <th class="text-end" style="width:110px;">Status</th>
         </tr>
       </thead>
       <tbody>
         {% for s in students %}
           {% set current_marker_id = current_marker_by_student.get(s.id) %}
-          <tr class="student-row">
-            <td class="text-truncate" title="{{ s.username }} (ID: {{ s.id }})">
-              <span class="fw-semibold">{{ s.username }}</span>
-              <span class="text-muted">(#{{ s.id }})</span>
-              {% if not current_marker_id %}
-                <span class="badge bg-secondary ms-1">Unassigned</span>
-              {% endif %}
+          {% set cohort_name = (s.cohort.name if s.cohort else 'No Cohort') %}
+          <tr class="student-row"
+              data-student="{{ (s.username or '')|lower }}"
+              data-email="{{ (s.email or '')|lower }}"
+              data-course="{{ (s.course or '')|lower }}"
+              data-cohort="{{ cohort_name|lower }}"
+              data-cohort-display="{{ cohort_name }}"
+              data-assigned="{{ '1' if current_marker_id else '0' }}">
+            <td title="{{ s.username }} (ID: {{ s.id }})">
+              <div class="student-cell">
+                <span class="student-name">{{ s.username }}</span>
+                <span class="student-id">(#{{ s.id }})</span>
+                <span class="cohort-pill">{{ cohort_name }}</span>
+                {% if not current_marker_id %}<span class="badge bg-secondary status-pill">Unassigned</span>{% endif %}
+              </div>
             </td>
-            <td class="text-truncate" style="max-width:260px;">
+            <td class="text-truncate-clip" title="{{ s.email }}">
               <a href="mailto:{{ s.email }}" class="text-decoration-none">{{ s.email }}</a>
             </td>
             <td>{{ s.course or '—' }}</td>
             <td>
-              <form action="{{ url_for('admin_assign') }}" method="post" class="d-flex align-items-center gap-2 m-0 p-0">
+              <form action="{{ url_for('admin_assign') }}" method="post" class="d-flex align-items-center gap-2 m-0 p-0 assign-form">
                 <input type="hidden" name="student_id" value="{{ s.id }}">
-                <select name="marker_id" class="form-select form-select-sm w-100" required>
+                <select name="marker_id" class="form-select form-select-sm w-100 marker-select" aria-label="Choose marker" required>
                   <option value="" disabled {{ 'selected' if not current_marker_id }}>Select…</option>
                   {% for m in markers %}
-                    <option value="{{ m.id }}" {{ 'selected' if current_marker_id == m.id }}>
-                      {{ m.username }}
-                    </option>
+                    <option value="{{ m.id }}" {{ 'selected' if current_marker_id == m.id }}>{{ m.username }}</option>
                   {% endfor %}
                 </select>
-                <button type="submit" class="btn btn-sm btn-primary">Save</button>
+                <button type="submit" class="btn btn-sm btn-primary save-btn">Save</button>
               </form>
             </td>
             <td class="text-end small">
@@ -66,25 +166,51 @@
   </div>
 </div>
 
-<style>
-  .admin-students-table td, .admin-students-table th { padding-top:.5rem; padding-bottom:.5rem; }
-  .admin-students-table .badge { font-size:.65rem; vertical-align:middle; }
-  .admin-students-table .text-truncate { max-width:320px; }
-  @media (max-width: 992px){ .admin-students-table .text-truncate { max-width:220px; } }
-  @media (max-width: 576px){ .admin-students-table .text-truncate { max-width:160px; } }
-</style>
-
 <script>
-  (function () {
-    const input = document.getElementById('searchInput');
-    if (!input) return;
-    input.addEventListener('input', function () {
-      const term = this.value.toLowerCase().trim();
-      document.querySelectorAll('.admin-students-table tbody tr.student-row').forEach(function (row) {
-        const text = row.innerText.toLowerCase();
-        row.style.display = text.includes(term) ? '' : 'none';
-      });
+(function () {
+  const q = document.getElementById('searchInput');
+  const fc = document.getElementById('filterCourse');
+  const fco = document.getElementById('filterCohort');
+  const onlyUn = document.getElementById('toggleUnassigned');
+  const norm = s => (s||'').toString().trim().toLowerCase();
+
+  function applyFilters(){
+    const qq = norm(q.value);
+    const course = norm(fc.value);
+    const cohort = norm(fco.value);
+    const unOnly = !!onlyUn?.checked;
+
+    const rows = document.querySelectorAll('tbody tr.student-row');
+    rows.forEach(tr => {
+      const hay = (tr.innerText || '').toLowerCase();
+      const ok =
+        (!qq || hay.includes(qq)) &&
+        (!course || tr.dataset.course === course) &&
+        (!cohort || tr.dataset.cohort === cohort) &&
+        (!unOnly || tr.dataset.assigned === '0');
+      tr.style.display = ok ? '' : 'none';
     });
-  })();
+  }
+
+  [q, fc, fco, onlyUn].forEach(el => {
+    if (el) { el.addEventListener('input', applyFilters); el.addEventListener('change', applyFilters); }
+  });
+
+  document.querySelectorAll('.assign-form').forEach(form => {
+    const select = form.querySelector('.marker-select');
+    const saveBtn = form.querySelector('.save-btn');
+    select.addEventListener('change', () => {
+      form.classList.add('saving');
+      saveBtn.disabled = true;
+      form.submit();
+    });
+    form.addEventListener('submit', () => {
+      form.classList.add('saving');
+      saveBtn.disabled = true;
+    });
+  });
+
+  applyFilters();
+})();
 </script>
 {% endblock %}

@@ -1,32 +1,127 @@
 {% extends 'base.html' %}
 {% block title %}Admin · Delete Students{% endblock %}
-{% block content %}
-<h2 class="mb-3 text-danger">Delete Students</h2>
-<p class="text-muted">This permanently removes the student and their submissions.</p>
 
-<div class="mb-3">
-  <input id="searchInput" class="form-control" type="search" placeholder="Search students…" aria-label="Search students">
+{% block content %}
+<style>
+  :root{ --muted:#6c757d; --border:#e9ecef; }
+  .page-head{display:flex;align-items:center;justify-content:space-between;gap:1rem;margin-bottom:.75rem}
+  .page-head h2{margin:0;font-weight:700}
+  .chip{display:inline-block;padding:.35rem .6rem;border:1px solid var(--border);border-radius:999px;background:#fff;font-weight:600;font-size:.85rem}
+
+  .toolbar{position:sticky;top:16px;z-index:9}
+
+  .table-sm th,.table-sm td,
+  .admin-students-table th,.admin-students-table td{padding:.55rem .65rem;vertical-align:middle}
+  .admin-students-table .text-truncate{max-width:320px}
+  @media (max-width:992px){ .admin-students-table .text-truncate{max-width:220px} }
+  @media (max-width:576px){ .admin-students-table .text-truncate{max-width:160px} }
+
+  .student-cell{display:flex;align-items:center;gap:.5rem;min-width:200px;flex-wrap:wrap}
+  .student-name{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:220px}
+  .student-id{color:var(--muted)}
+  .cohort-pill{
+    display:inline-flex;align-items:center;gap:.35rem;
+    padding:.2rem .5rem;border-radius:999px;
+    background:#eef2f4;border:1px solid #e1e7eb;
+    color:#495057;font-size:.75rem;white-space:nowrap
+  }
+  .text-truncate-clip{max-width:280px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .danger-note{color:var(--muted)}
+</style>
+
+{# quick counts #}
+{% set total = students|length %}
+{% set seen_courses = [] %}
+{% set seen_cohorts = [] %}
+{% set by_course = {} %}
+{% for s in students %}
+  {% set c = (s.course or '—') %}
+  {% if c not in by_course %}{% set _ = by_course.update({c: 1}) %}{% else %}{% set _ = by_course.update({c: by_course[c]+1}) %}{% endif %}
+{% endfor %}
+
+<div class="page-head">
+  <div>
+    <h2 class="mb-0 text-danger">Delete Students</h2>
+    <div class="danger-note">This permanently removes the student and their submissions.</div>
+  </div>
+  <div class="d-flex gap-2 flex-wrap">
+    <span class="chip">Total: {{ total }}</span>
+    {% for cname, cnt in by_course.items() %}
+      <span class="chip">{{ cname }}: {{ cnt }}</span>
+    {% endfor %}
+  </div>
+</div>
+
+<div class="toolbar mb-3">
+  <div class="card shadow-sm">
+    <div class="card-body py-3">
+      <div class="row g-2 align-items-end">
+        <div class="col-lg-6">
+          <label class="form-label mb-1">Search</label>
+          <input id="searchInput" class="form-control" type="search" placeholder="Search students, emails…" aria-label="Search students">
+        </div>
+        <div class="col-6 col-lg-3">
+          <label class="form-label mb-1">Course</label>
+          <select id="filterCourse" class="form-select">
+            <option value="">All</option>
+            {% for s in students %}
+              {% if s.course and (s.course not in seen_courses) %}
+                {% set _ = seen_courses.append(s.course) %}
+                <option value="{{ s.course }}">{{ s.course }}</option>
+              {% endif %}
+            {% endfor %}
+            {% if '—' in by_course and by_course['—'] %}
+              <option value="—">—</option>
+            {% endif %}
+          </select>
+        </div>
+        <div class="col-6 col-lg-3">
+          <label class="form-label mb-1">Cohort</label>
+          <select id="filterCohort" class="form-select">
+            <option value="">All</option>
+            {% for s in students %}
+              {% set cname = (s.cohort.name if s.cohort else 'No Cohort') %}
+              {% if cname not in seen_cohorts %}
+                {% set _ = seen_cohorts.append(cname) %}
+                <option value="{{ cname }}">{{ cname }}</option>
+              {% endif %}
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+    </div>
+  </div>
 </div>
 
 <div class="card shadow-sm">
   <div class="table-responsive">
-    <table class="table table-hover align-middle mb-0 admin-students-table">
-      <thead class="table-light">
-        <tr>
-          <th style="min-width:180px;">Student</th>
-          <th>Email</th>
-          <th>Course</th>
+    <table class="table table-sm table-hover align-middle mb-0 admin-students-table" id="studentsTable">
+      <thead class="table-light sticky-top">
+        <tr class="small text-uppercase">
+          <th style="min-width:220px;">Student</th>
+          <th style="min-width:240px;">Email</th>
+          <th style="min-width:100px;">Course</th>
           <th class="text-end" style="width:160px;">Action</th>
         </tr>
       </thead>
       <tbody>
         {% for s in students %}
-          <tr class="student-row">
-            <td>
-              <div class="fw-semibold">{{ s.username }}</div>
-              <div class="small text-muted">ID: {{ s.id }}</div>
+          {% set cohort_name = (s.cohort.name if s.cohort else 'No Cohort') %}
+          <tr class="student-row"
+              data-student="{{ (s.username or '')|lower }}"
+              data-email="{{ (s.email or '')|lower }}"
+              data-course="{{ (s.course or '—')|lower }}"
+              data-cohort="{{ cohort_name|lower }}">
+            <td title="{{ s.username }} (ID: {{ s.id }})">
+              <div class="student-cell">
+                <span class="student-name">{{ s.username }}</span>
+                <span class="student-id">(#{{ s.id }})</span>
+                <span class="cohort-pill">{{ cohort_name }}</span>
+              </div>
             </td>
-            <td><a href="mailto:{{ s.email }}">{{ s.email }}</a></td>
+            <td class="text-truncate-clip" title="{{ s.email }}">
+              <a href="mailto:{{ s.email }}" class="text-decoration-none">{{ s.email }}</a>
+            </td>
             <td>{{ s.course or '—' }}</td>
             <td class="text-end">
               <form action="{{ url_for('delete_student', student_id=s.id) }}" method="post" class="d-inline"
@@ -45,16 +140,32 @@
 </div>
 
 <script>
-  (function () {
-    const input = document.getElementById('searchInput');
-    if (!input) return;
-    input.addEventListener('input', function () {
-      const term = this.value.toLowerCase().trim();
-      document.querySelectorAll('.admin-students-table tbody tr.student-row').forEach(function (row) {
-        const text = row.innerText.toLowerCase();
-        row.style.display = text.includes(term) ? '' : 'none';
-      });
+(function () {
+  const q = document.getElementById('searchInput');
+  const fc = document.getElementById('filterCourse');
+  const fco = document.getElementById('filterCohort');
+  const norm = s => (s||'').toString().trim().toLowerCase();
+
+  function applyFilters(){
+    const term = norm(q.value);
+    const course = norm(fc.value);
+    const cohort = norm(fco.value);
+
+    document.querySelectorAll('#studentsTable tbody tr.student-row').forEach(tr => {
+      const hay = (tr.innerText || '').toLowerCase();
+      const ok =
+        (!term || hay.includes(term)) &&
+        (!course || tr.dataset.course === course) &&
+        (!cohort || tr.dataset.cohort === cohort);
+      tr.style.display = ok ? '' : 'none';
     });
-  })();
+  }
+
+  [q, fc, fco].forEach(el => {
+    if (el){ el.addEventListener('input', applyFilters); el.addEventListener('change', applyFilters); }
+  });
+
+  applyFilters();
+})();
 </script>
 {% endblock %}

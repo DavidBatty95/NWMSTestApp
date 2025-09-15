@@ -2,77 +2,103 @@
 {% block title %}Admin · Dashboard{% endblock %}
 
 {% block content %}
-<div class="d-flex align-items-center justify-content-between mb-3">
+<style>
+  :root{
+    --ink:#1f2328;
+    --muted:#6c757d;
+    --border:#e9ecef;
+    --card:#fff;
+    --green:#4caf50;
+    --amber:#f6c453;
+    --red:#e57373;
+    --grey:#aeb4ba;
+  }
+  .page-head{display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:.75rem}
+  .page-head h2{margin:0;font-weight:700;letter-spacing:.2px}
+  .page-head p{margin:0;color:var(--muted)}
+
+  .card{border-radius:12px;border:1px solid var(--border);background:var(--card)}
+  .kpi .label{color:var(--muted);font-size:.85rem;margin-bottom:.2rem}
+  .kpi .value{font-weight:700;font-size:2rem;line-height:1.1;color:var(--ink)}
+
+  .table-sm th,.table-sm td{padding:.55rem .65rem;vertical-align:middle}
+  .badge{font-weight:600}
+  .nowrap{white-space:nowrap}
+  .legend-row{color:var(--muted);font-size:.9rem}
+  .legend-dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:.35rem;transform:translateY(-1px)}
+</style>
+
+<div class="page-head">
   <div>
-    <h2 class="mb-1">Admin Dashboard</h2>
-    <p class="text-muted mb-0">Overview of cohorts, students, and marking activity.</p>
+    <h2>Admin Dashboard</h2>
+    <p>Overview of cohorts, students, and marking activity.</p>
   </div>
 </div>
 
 <div class="row g-3">
-  <!-- KPI cards -->
   <div class="col-6 col-md-3">
-    <div class="card shadow-sm h-100">
+    <div class="card kpi h-100">
       <div class="card-body">
-        <div class="text-muted small">Students</div>
-        <div class="display-6 fw-semibold">{{ students|length }}</div>
+        <div class="label">Students</div>
+        <div class="value">{{ students|length }}</div>
       </div>
     </div>
   </div>
   <div class="col-6 col-md-3">
-    <div class="card shadow-sm h-100">
+    <div class="card kpi h-100">
       <div class="card-body">
-        <div class="text-muted small">Markers</div>
-        <div class="display-6 fw-semibold">{{ markers|length }}</div>
+        <div class="label">Markers</div>
+        <div class="value">{{ markers|length }}</div>
       </div>
     </div>
   </div>
   <div class="col-12 col-md-6">
-    <div class="card shadow-sm h-100">
-      <div class="card-body d-flex align-items-center justify-content-between">
+    <div class="card kpi h-100">
+      <div class="card-body d-flex justify-content-between align-items-end">
         <div>
-          <div class="text-muted small">Assignments</div>
-          <div class="h3 fw-semibold mb-0">{{ assignments|length }}</div>
+          <div class="label">Assignments</div>
+          <div class="value" style="font-size:1.8rem">{{ assignments|length }}</div>
         </div>
         <div class="text-end">
-          <div class="small text-muted">Avg. students/marker</div>
           {% set mcount = (markers|length) if (markers|length) > 0 else 1 %}
-          <div class="h4 fw-semibold mb-0">
-            {{ (assignments|length / mcount)|round(1) }}
-          </div>
+          <div class="label">Avg. students / marker</div>
+          <div class="value" style="font-size:1.6rem">{{ (assignments|length / mcount)|round(1) }}</div>
         </div>
       </div>
     </div>
   </div>
 </div>
 
-<!-- Status donut + Legend -->
 <div class="row g-3 mt-1">
   <div class="col-12 col-lg-6">
-    <div class="card shadow-sm h-100">
+    <div class="card h-100">
       <div class="card-body">
         <div class="d-flex align-items-center justify-content-between mb-2">
           <h5 class="mb-0">Student Status</h5>
         </div>
-        <div class="position-relative mx-auto" style="max-width: 420px;">
-          <canvas id="statusDonut" width="420" height="420" style="width:100%;height:auto;"></canvas>
+
+        <div class="position-relative mx-auto" style="max-width:380px">
+          <canvas id="statusDonut" width="380" height="380" style="width:100%;height:auto;"></canvas>
         </div>
 
-        <!-- Legend -->
-        <div class="d-flex flex-wrap gap-2 justify-content-center mt-3">
-          <!-- Colors must match the dataset below -->
-          <span class="badge rounded-pill legend-pill" style="background:#aeb4ba;">Unsubmitted</span>
-          <span class="badge rounded-pill legend-pill" style="background:#f6c453; color:#1f2328;">Awaiting Marking</span>
-          <span class="badge rounded-pill legend-pill" style="background:#e57373;">Referral</span>
-          <span class="badge rounded-pill legend-pill" style="background:#4caf50;">Passed</span>
+        {% set un = status_counts["Unsubmitted"]|default(0) %}
+        {% set aw = status_counts["Awaiting Marking"]|default(0) %}
+        {% set rf = status_counts["Referral"]|default(0) %}
+        {% set ps = status_counts["Passed"]|default(0) %}
+        {% set tot = un + aw + rf + ps %}
+
+        <div class="legend-row d-flex flex-wrap gap-3 justify-content-center mt-3">
+          <span><i class="legend-dot" style="background:var(--grey)"></i>Unsubmitted: {{ un }}{% if tot %} ({{ ((un/tot)*100)|round(0) }}%){% endif %}</span>
+          <span><i class="legend-dot" style="background:var(--amber)"></i>Awaiting: {{ aw }}{% if tot %} ({{ ((aw/tot)*100)|round(0) }}%){% endif %}</span>
+          <span><i class="legend-dot" style="background:var(--red)"></i>Referral: {{ rf }}{% if tot %} ({{ ((rf/tot)*100)|round(0) }}%){% endif %}</span>
+          <span><i class="legend-dot" style="background:var(--green)"></i>Passed: {{ ps }}{% if tot %} ({{ ((ps/tot)*100)|round(0) }}%){% endif %}</span>
         </div>
       </div>
     </div>
   </div>
 
-  <!-- Recent activity -->
   <div class="col-12 col-lg-6">
-    <div class="card shadow-sm h-100">
+    <div class="card h-100">
       <div class="card-body">
         <div class="d-flex align-items-center justify-content-between mb-2">
           <h5 class="mb-0">Recent Submissions</h5>
@@ -92,16 +118,12 @@
               {% for s in recent_submissions %}
               {% set u = users.get(s.student_id) if users is defined else None %}
               <tr>
-                <td>{{ (u.username if u else 'Student #' ~ s.student_id) }}</td>
-                <td class="text-center">#{{ s.workbook_number }}</td>
-                <td>
-                  <span title="{{ s.submission_time }}">
-                    {{ s.submission_time.strftime('%Y-%m-%d %H:%M') }}
-                  </span>
-                </td>
+                <td class="fw-semibold">{{ (u.username if u else 'Student #' ~ s.student_id) }}</td>
+                <td class="text-center nowrap">#{{ s.workbook_number }}</td>
+                <td class="nowrap" title="{{ s.submission_time }}">{{ s.submission_time.strftime('%Y-%m-%d %H:%M') }}</td>
                 <td class="text-end">
                   {% if not s.marked %}
-                    <span class="badge bg-warning text-dark">Awaiting Marking</span>
+                    <span class="badge bg-warning text-dark">Awaiting</span>
                   {% elif s.is_referral %}
                     <span class="badge bg-danger">Referral</span>
                   {% elif s.score == 0 %}
@@ -113,9 +135,7 @@
               </tr>
               {% endfor %}
               {% if recent_submissions|length == 0 %}
-              <tr>
-                <td colspan="4" class="text-center text-muted py-3">No recent submissions.</td>
-              </tr>
+              <tr><td colspan="4" class="text-center text-muted py-3">No recent submissions.</td></tr>
               {% endif %}
             </tbody>
           </table>
@@ -125,107 +145,78 @@
   </div>
 </div>
 
-<style>
-  .legend-pill{font-weight:600; letter-spacing:.2px;}
-</style>
-
-<!-- Chart.js -->
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
 <script>
 (function(){
-  const dataCounts = {
+  const counts = {
     unsubmitted: {{ status_counts["Unsubmitted"]|default(0) }},
     awaiting:    {{ status_counts["Awaiting Marking"]|default(0) }},
     referral:    {{ status_counts["Referral"]|default(0) }},
     passed:      {{ status_counts["Passed"]|default(0) }}
   };
-  const total = dataCounts.unsubmitted + dataCounts.awaiting + dataCounts.referral + dataCounts.passed;
+  const total = counts.unsubmitted + counts.awaiting + counts.referral + counts.passed;
 
-  // Brand-aligned palette (soft, professional)
+  const css = k => getComputedStyle(document.documentElement).getPropertyValue(k).trim();
   const COLORS = {
-    unsubmitted: '#AEB4BA',   // muted grey
-    awaiting:    '#F6C453',   // warm amber
-    referral:    '#E57373',   // soft red
-    passed:      '#4CAF50'    // NWMS green
+    unsubmitted: css('--grey')  || '#aeb4ba',
+    awaiting:    css('--amber') || '#f6c453',
+    referral:    css('--red')   || '#e57373',
+    passed:      css('--green') || '#4caf50'
   };
 
-  // Center label plugin
   const centerLabel = {
-    id: 'centerLabel',
-    afterDraw(chart, args, opts){
-      const {ctx, chartArea: {width, height}} = chart;
-      const meta = chart.getDatasetMeta(0);
-      if (!meta || !meta.data || !meta.data.length) return;
-
+    id:'centerLabel',
+    afterDraw(chart){
+      const {ctx} = chart;
+      const el = chart.getDatasetMeta(0).data?.[0];
+      if(!el) return;
+      const {x,y} = el;
       ctx.save();
-      const x = chart.getDatasetMeta(0).data[0].x;
-      const y = chart.getDatasetMeta(0).data[0].y;
-
-      // Outer total
+      ctx.textAlign='center'; ctx.textBaseline='middle';
       ctx.fillStyle = '#1f2328';
-      ctx.font = '700 22px system-ui, -apple-system, Segoe UI, Roboto, "Helvetica Neue", Arial';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText(total.toString(), x, y - 4);
-
-      // Subtext
+      ctx.font = '700 20px system-ui,-apple-system,Segoe UI,Roboto,Helvetica Neue,Arial';
+      ctx.fillText(String(total), x, y-3);
       ctx.fillStyle = '#6c757d';
-      ctx.font = '500 11px system-ui, -apple-system, Segoe UI, Roboto, "Helvetica Neue", Arial';
-      ctx.fillText('Students', x, y + 14);
-
+      ctx.font = '500 11px system-ui,-apple-system,Segoe UI,Roboto,Helvetica Neue,Arial';
+      ctx.fillText('Students', x, y+13);
       ctx.restore();
     }
   };
 
   const ctx = document.getElementById('statusDonut').getContext('2d');
   new Chart(ctx, {
-    type: 'doughnut',
-    data: {
-      labels: ['Unsubmitted', 'Awaiting Marking', 'Referral', 'Passed'],
-      datasets: [{
-        data: [
-          dataCounts.unsubmitted,
-          dataCounts.awaiting,
-          dataCounts.referral,
-          dataCounts.passed
-        ],
-        backgroundColor: [
-          COLORS.unsubmitted,
-          COLORS.awaiting,
-          COLORS.referral,
-          COLORS.passed
-        ],
-        borderWidth: 0,
-        hoverOffset: 8,
-        cutout: '64%'
+    type:'doughnut',
+    data:{
+      labels:['Unsubmitted','Awaiting','Referral','Passed'],
+      datasets:[{
+        data:[counts.unsubmitted, counts.awaiting, counts.referral, counts.passed],
+        backgroundColor:[COLORS.unsubmitted, COLORS.awaiting, COLORS.referral, COLORS.passed],
+        borderWidth:0,
+        hoverOffset:6,
+        cutout:'64%'
       }]
     },
-    options: {
-      responsive: true,
-      maintainAspectRatio: true,
-      plugins: {
-        legend: { display: false },
-        tooltip: {
-          backgroundColor: 'rgba(18,19,21,.92)',
-          padding: 10,
-          bodyFont: { weight: 600 },
-          displayColors: true,
-          callbacks: {
-            label: function(ctx){
-              const label = ctx.label || '';
-              const value = ctx.parsed || 0;
-              const pct = total ? Math.round((value / total) * 100) : 0;
-              return ` ${label}: ${value} (${pct}%)`;
+    options:{
+      responsive:true,
+      maintainAspectRatio:true,
+      plugins:{
+        legend:{display:false},
+        tooltip:{
+          backgroundColor:'rgba(18,19,21,.92)',
+          padding:8,
+          displayColors:true,
+          callbacks:{
+            label: (ctx)=>{
+              const v = ctx.parsed || 0;
+              const pct = total ? Math.round((v/total)*100) : 0;
+              return ` ${ctx.label}: ${v} (${pct}%)`;
             }
           }
         }
       },
-      animation: {
-        duration: 900,
-        easing: 'easeOutQuart'
-      }
+      animation:{duration:500}
     },
-    plugins: [centerLabel]
+    plugins:[centerLabel]
   });
 })();
 </script>

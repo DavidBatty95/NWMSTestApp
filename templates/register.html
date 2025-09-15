@@ -2,72 +2,158 @@
 {% block title %}Register{% endblock %}
 
 {% block content %}
-<div class="row justify-content-center">
-  <div class="col-md-7 col-lg-6">
-    <div class="card shadow-sm">
-      <div class="card-body">
-        <h3 class="mb-3 text-center">Create your account</h3>
+<style>
+  .wrap{max-width:560px;margin:0 auto}
+  .muted{color:#6c757d}
+  .card{border-radius:12px}
+  .form-note{font-size:.875rem;color:#6c757d}
+  .pw-row{display:flex;gap:.5rem}
+  .pw-row .form-control{flex:1}
+  .strength{height:6px;border-radius:6px;background:#e9ecef;overflow:hidden}
+  .strength > div{height:100%;transition:width .2s ease}
+</style>
 
-        <form method="post" class="row g-3">
-          <div class="col-12">
-            <label class="form-label">Username</label>
-            <input type="text" name="username" class="form-control" required>
-          </div>
+<div class="wrap">
+  <div class="card shadow-sm">
+    <div class="card-body p-4 p-md-5">
+      <h3 class="mb-1 text-center">Create your account</h3>
+      <p class="text-center muted mb-4">Join the NWMS Workbook Portal</p>
 
-          <div class="col-12">
-            <label class="form-label">Email</label>
-            <input type="email" name="email" class="form-control" required>
-          </div>
+      <form method="post" id="registerForm" class="vstack gap-3" novalidate>
+        <div>
+          <label class="form-label">Username</label>
+          <input type="text" name="username" id="username" class="form-control"
+                 required minlength="3" maxlength="150" autocomplete="username" placeholder="e.g. alex.wood">
+        </div>
 
-          <div class="col-12">
-            <label class="form-label">Password</label>
-            <input type="password" name="password" class="form-control" required>
-          </div>
+        <div>
+          <label class="form-label">Email</label>
+          <input type="email" name="email" id="email" class="form-control"
+                 required autocomplete="email" placeholder="you@company.com">
+        </div>
 
-          <div class="col-12">
-            <label class="form-label">Role</label>
-            <select name="role" id="roleSelect" class="form-select" required>
-              <option value="student" selected>Student</option>
-              <option value="marker">Marker</option>
-              <option value="admin">Admin</option>
-            </select>
+        <div>
+          <label class="form-label">Password</label>
+          <div class="pw-row">
+            <input type="password" name="password" id="password" class="form-control"
+                   required autocomplete="new-password" placeholder="At least 6 characters">
+            <button type="button" class="btn btn-outline-secondary" id="togglePw" aria-controls="password" aria-pressed="false">Show</button>
           </div>
+          <div class="strength mt-2" aria-hidden="true">
+            <div id="pwBar" style="width:0;background:#e9ecef"></div>
+          </div>
+          <div class="form-note mt-2" id="pwHint">Use 6+ characters. A mix of letters and numbers is best.</div>
+        </div>
 
-          <!-- Student-only: Cohort passcode -->
-          <div class="col-12" id="cohortCodeWrap">
-            <label class="form-label">Cohort Passcode</label>
-            <input type="text" name="cohort_passcode" class="form-control" placeholder="e.g. 9X2F7K8HLM">
-            <div class="form-text">You’ll get this from your tutor or course admin.</div>
-          </div>
+        <div>
+          <label class="form-label">Role</label>
+          <select name="role" id="roleSelect" class="form-select" required>
+            <option value="student" selected>Student</option>
+            <option value="marker">Marker</option>
+            <option value="admin">Admin</option>
+          </select>
+          <div class="form-note" id="roleNote">Students will need a cohort passcode.</div>
+        </div>
 
-          <div class="col-12 pt-2">
-            <button class="btn btn-success w-100">Create Account</button>
-          </div>
+        <div id="cohortWrap">
+          <label class="form-label">Cohort passcode</label>
+          <input type="text" name="cohort_passcode" id="cohortCode" class="form-control" placeholder="e.g. 9X2F7K8HLM" autocomplete="one-time-code" inputmode="latin">
+          <div class="form-note">Provided by your tutor.</div>
+        </div>
 
-          <div class="col-12 text-center">
-            <small class="text-muted">Already have an account?
-              <a href="{{ url_for('login') }}">Login</a></small>
-          </div>
-        </form>
-      </div>
+        <div class="pt-2">
+          <button class="btn btn-success w-100" id="submitBtn">Create account</button>
+        </div>
+
+        <div class="text-center">
+          <small class="text-muted">Already have an account? <a href="{{ url_for('login') }}">Login</a></small>
+        </div>
+      </form>
     </div>
   </div>
 </div>
 
 {% block extra_scripts %}
 <script>
-  // Hide cohort code when not a student
+(function(){
   const roleSelect = document.getElementById('roleSelect');
-  const codeWrap = document.getElementById('cohortCodeWrap');
-  function toggleCode(){
-    if (roleSelect.value === 'student') {
-      codeWrap.style.display = '';
-    } else {
-      codeWrap.style.display = 'none';
-    }
+  const cohortWrap = document.getElementById('cohortWrap');
+  const cohortCode = document.getElementById('cohortCode');
+  const roleNote   = document.getElementById('roleNote');
+  const pwInput    = document.getElementById('password');
+  const pwBar      = document.getElementById('pwBar');
+  const pwHint     = document.getElementById('pwHint');
+  const togglePw   = document.getElementById('togglePw');
+  const form       = document.getElementById('registerForm');
+  const submitBtn  = document.getElementById('submitBtn');
+
+  // Minimal: show cohort input only for Students
+  function toggleCohort(){
+    const isStudent = roleSelect.value === 'student';
+    cohortWrap.style.display = isStudent ? '' : 'none';
+    cohortCode.required = isStudent;
+    roleNote.textContent = isStudent
+      ? 'Students will need a cohort passcode.'
+      : (roleSelect.value === 'marker'
+          ? 'Markers can be assigned students by an admin.'
+          : 'Admins have full portal access.');
   }
-  toggleCode();
-  roleSelect.addEventListener('change', toggleCode);
+
+  // Keep passcode tidy (uppercase, no spaces)
+  function normaliseCode(){
+    cohortCode.value = (cohortCode.value || '').replace(/\s+/g,'').toUpperCase();
+  }
+
+  // Lightweight strength hint
+  function assessPw(){
+    const v = pwInput.value || '';
+    const len = v.length >= 6;
+    const mix = /[A-Za-z]/.test(v) && /\d/.test(v);
+    let score = 0; if (len) score += 50; if (mix) score += 50;
+    pwBar.style.width = score + '%';
+    pwBar.style.background = score < 50 ? '#ffc107' : '#198754';
+    pwHint.textContent = score < 50 ? 'Use 6+ characters. A mix helps.' : 'Looks good.';
+  }
+
+  // Toggle password visibility
+  togglePw.addEventListener('click', function(){
+    const show = pwInput.type === 'password';
+    pwInput.type = show ? 'text' : 'password';
+    togglePw.textContent = show ? 'Hide' : 'Show';
+    togglePw.setAttribute('aria-pressed', String(show));
+    pwInput.focus();
+  });
+
+  // Simple enable/disable submit
+  function gate(){
+    const u = (document.getElementById('username').value || '').trim();
+    const e = (document.getElementById('email').value || '').trim();
+    const p = pwInput.value || '';
+    const needsCode = roleSelect.value === 'student';
+    const c = (cohortCode.value || '').trim();
+    submitBtn.disabled = !(u && e && p.length >= 6 && (!needsCode || c));
+  }
+
+  roleSelect.addEventListener('change', ()=>{ toggleCohort(); gate(); });
+  if (cohortCode){
+    cohortCode.addEventListener('input', ()=>{ normaliseCode(); gate(); });
+    cohortCode.addEventListener('blur', normaliseCode);
+  }
+  pwInput.addEventListener('input', ()=>{ assessPw(); gate(); });
+  ['username','email'].forEach(id=>{
+    const el = document.getElementById(id);
+    el.addEventListener('input', gate);
+  });
+
+  // Initialise
+  toggleCohort(); assessPw(); gate();
+
+  // Prevent double submit
+  form.addEventListener('submit', function(){
+    submitBtn.disabled = true;
+    setTimeout(()=>{ submitBtn.disabled = false; }, 3000);
+  });
+})();
 </script>
 {% endblock %}
 {% endblock %}
