@@ -27,32 +27,45 @@ app = Flask(__name__)
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'your-secret-key')
 
 project_root = Path(__file__).resolve().parent
-is_render = bool(os.getenv("RENDER") or os.getenv("RENDER_SERVICE_ID"))
 
-# ---------- Database (Render persistent or local) ----------
+def _is_render():
+    # Render sets at least one of these; include a couple for safety
+    return any([
+        os.getenv("RENDER"),
+        os.getenv("RENDER_SERVICE_ID"),
+        os.getenv("RENDER_EXTERNAL_URL"),
+    ])
+
+IS_RENDER = _is_render()
+
+# ---------- Persistent roots ----------
+# On Render: always use /var/data unless explicitly overridden
+# Locally: use ./data and ./uploads in the project directory
+PERSIST_ROOT = Path(os.getenv("PERSIST_ROOT", "/var/data" if IS_RENDER else (project_root / "data")))
+PERSIST_ROOT.mkdir(parents=True, exist_ok=True)
+
+# ---------- Database ----------
+# If DATABASE_URL is provided (e.g., Render Postgres), use that.
+# Otherwise, use SQLite on the persistent disk (Render) or local ./data (dev).
 if os.getenv("DATABASE_URL"):
     db_url = os.getenv("DATABASE_URL")
-elif is_render:
-    data_dir = Path(os.getenv("PERSIST_ROOT", "/var/data"))
-    data_dir.mkdir(parents=True, exist_ok=True)
-    db_url = f"sqlite:///{(data_dir / 'database.db').as_posix()}"
 else:
-    data_dir = project_root / "data"
-    data_dir.mkdir(parents=True, exist_ok=True)
-    db_url = f"sqlite:///{(data_dir / 'database.db').as_posix()}"
+    sqlite_path = (PERSIST_ROOT / "database.db") if IS_RENDER else (project_root / "data" / "database.db")
+    sqlite_path.parent.mkdir(parents=True, exist_ok=True)
+    db_url = f"sqlite:///{sqlite_path.as_posix()}"
 
 app.config['SQLALCHEMY_DATABASE_URI'] = db_url
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
-# ---------- Uploads (Render persistent or local) ----------
-app.config['MAX_CONTENT_LENGTH'] = int(os.getenv('MAX_CONTENT_LENGTH', 50 * 1024 * 1024))  # 50 MB default
+# ---------- Uploads ----------
+# Max size: 50 MB (can override via env)
+app.config['MAX_CONTENT_LENGTH'] = int(os.getenv('MAX_CONTENT_LENGTH', 50 * 1024 * 1024))
 
+# Upload root: allow override, otherwise use /var/data/uploads on Render or ./uploads locally
 if os.getenv("UPLOAD_ROOT"):
     upload_root = Path(os.getenv("UPLOAD_ROOT"))
-elif is_render:
-    upload_root = Path(os.getenv("PERSIST_ROOT", "/var/data")) / "uploads"
 else:
-    upload_root = project_root / "uploads"
+    upload_root = (PERSIST_ROOT / "uploads") if IS_RENDER else (project_root / "uploads")
 
 upload_root.mkdir(parents=True, exist_ok=True)
 pdf_dir = upload_root / "pdfs"
