@@ -3,26 +3,21 @@
 
 {% block content %}
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css">
-<style>
-  .status-card { border-radius: 14px; padding: 16px 20px; }
-  .status-icon {
-    width: 50px; height: 50px;
-    display:flex; align-items:center; justify-content:center;
-    border-radius: 50%;
-    font-size: 1.5rem;
-    box-shadow: 0 4px 10px rgba(0,0,0,.2);
-  }
-  .action-form .upload-group { min-width: 280px; }
-  @media (max-width: 768px){
-    .action-form .upload-group { min-width: 100%; }
-  }
-  /* Countdown colors */
-  .countdown-ok { color: #198754; font-weight: 700; }     /* green */
-  .countdown-warn { color: #d68910; font-weight: 700; }   /* amber */
-  .countdown-bad { color: #dc3545; font-weight: 700; }    /* red */
-</style>
 
-{# --- Header with welcome + course meta + countdown TEST TEST TES--- #}
+{# --------- Quick counters for progress + percentages --------- #}
+{% set ns = namespace(total=items|length, submitted=0, passed=0, failed=0) %}
+{% for row in items %}
+  {% set latest = row.latest %}
+  {% if latest %}{% set ns.submitted = ns.submitted + 1 %}{% endif %}
+  {% if row.label == 'Marked Pass' %}{% set ns.passed = ns.passed + 1 %}{% endif %}
+  {% if row.label == 'Failed' %}{% set ns.failed = ns.failed + 1 %}{% endif %}
+{% endfor %}
+{% set unsubmitted = (ns.total - ns.submitted) if ns.total else 0 %}
+{% set in_progress = (ns.submitted - ns.passed - ns.failed) if ns.total else 0 %}
+{% set pct_pass = (ns.passed * 100 // (ns.total if ns.total else 1)) %}
+{% set pct_submitted = (ns.submitted * 100 // (ns.total if ns.total else 1)) %}
+
+{# --------- Dates / countdown --------- #}
 {% set _start = course_start_date %}
 {% set _deadline = course_deadline %}
 {% set _start_iso = _start.strftime('%Y-%m-%dT%H:%M:%SZ') if _start else '' %}
@@ -30,68 +25,131 @@
 {% set _start_human = _start.strftime('%d %b %Y') if _start else '—' %}
 {% set _deadline_human = _deadline.strftime('%d %b %Y') if _deadline else '—' %}
 
-<div id="courseMeta" class="card shadow-sm mb-3" data-deadline="{{ _deadline_iso }}">
-  <div class="card-body">
-    <h2 class="mb-1">Welcome, {{ current_user.username }}!</h2>
+<style>
+  :root{
+    --nwms-green:#4CAF50;
+    --nwms-green-2:#2E7D32;
+    --amber:#F6C453;
+    --muted:#6c757d;
+  }
+  .panel { border-radius: 14px; border:1px solid #e9ecef; box-shadow:0 4px 14px rgba(0,0,0,.06); background:#fff; }
+  .panel-head { padding:16px 18px; border-bottom:1px solid #eef0f2; }
+
+  /* Prominent status panel with coloured top bar */
+  .status-panel { position:relative; overflow:hidden; }
+  .status-panel::before{
+    content:""; position:absolute; inset:0 0 auto 0; height:6px;
+    background: var(--bar-color, var(--nwms-green));
+  }
+  .status-body { padding:18px; display:flex; align-items:center; gap:16px; flex-wrap:wrap; }
+  .status-icon{
+    width:56px; height:56px; border-radius:50%;
+    display:flex; align-items:center; justify-content:center;
+    font-size:1.5rem; box-shadow:0 6px 16px rgba(0,0,0,.18);
+    background:#fff;
+  }
+  .status-meta .lead { font-weight:700; margin:0; }
+  .status-meta .sub { color:var(--muted); font-size:.95rem; }
+
+  /* Progress block (matches panels) */
+  .progress-panel .panel-body{ padding:18px; }
+  .progress { height: 14px; border-radius: 999px; background:#f1f3f5; }
+  .progress .progress-bar { font-size:.75rem; font-weight:600; }
+  .progress-caption { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-top:10px; }
+  .chip { display:inline-flex; align-items:center; gap:6px; border:1px solid #e9ecef; padding:.25rem .6rem; border-radius:999px; background:#fff; font-weight:600; font-size:.85rem; }
+
+  /* Countdown colors */
+  .countdown-ok { color: #198754; font-weight: 700; }
+  .countdown-warn { color: #d68910; font-weight: 700; }
+  .countdown-bad { color: #dc3545; font-weight: 700; }
+
+  /* Table tweaks */
+  .table td, .table th { vertical-align: middle; }
+  .table .badge { font-weight: 600; }
+  .upload-group { min-width: 280px; }
+  @media (max-width: 768px){ .upload-group{ min-width:100%; } }
+</style>
+
+{# ================= Welcome / meta ================= #}
+<div id="courseMeta" class="panel mb-3" data-deadline="{{ _deadline_iso }}">
+  <div class="panel-head">
+    <h2 class="mb-0">Welcome, {{ current_user.username }}!</h2>
+  </div>
+  <div class="p-3">
     <div class="text-muted">
       Course: <strong>{{ current_user.course or '—' }}</strong>
       &nbsp;&middot;&nbsp;
-      Started on: <strong>{{ _start_human }}</strong>
+      Start: <strong>{{ _start_human }}</strong>
       &nbsp;&middot;&nbsp;
       Allowed: <strong>{{ months_allowed }} months</strong>
     </div>
-    <div class="mt-2">
-      <span class="text-muted">Remaining Time to Complete Submissions:</span>
+    <div class="mt-1">
+      <span class="text-muted">Time remaining:</span>
       <span id="deadlineCountdown" class="fw-semibold ms-1">—</span>
       <span class="text-muted small">(Deadline: {{ _deadline_human }})</span>
     </div>
   </div>
 </div>
 
-{# --- Overall status card --- #}
-<div class="mb-4">
-  {% if overall_status == 'Pass' %}
-    <div class="status-card bg-success text-white shadow-sm">
-      <div class="d-flex align-items-center justify-content-between">
-        <div>
-          <h5 class="mb-1">Overall Status</h5>
-          <p class="mb-0 fw-bold fs-5">Pass</p>
-        </div>
-        <div class="status-icon bg-white text-success">
-          <i class="bi bi-check-circle-fill"></i>
-        </div>
+{# ================= Overall status (with coloured top bar) ================= #}
+{% set status_color = '#6c757d' %}
+{% set status_icon = 'bi-hourglass-split' %}
+{% set status_title = 'In Progress' %}
+{% if overall_status == 'Pass' %}
+  {% set status_color = '#4CAF50' %}
+  {% set status_icon = 'bi-check-circle-fill' %}
+  {% set status_title = 'Pass' %}
+{% elif overall_status == 'Fail' %}
+  {% set status_color = '#dc3545' %}
+  {% set status_icon = 'bi-x-circle-fill' %}
+  {% set status_title = 'Fail' %}
+{% endif %}
+
+<div class="panel status-panel mb-3" style="--bar-color: {{ status_color }}">
+  <div class="status-body">
+    <div class="status-icon" style="color: {{ status_color }}">
+      <i class="bi {{ status_icon }}"></i>
+    </div>
+    <div class="status-meta me-auto">
+      <div class="lead" style="color: {{ status_color }};">Overall Status: {{ status_title }}</div>
+      <div class="sub">
+        {{ ns.passed }} of {{ ns.total }} workbooks passed &middot; {{ ns.submitted }} submitted &middot; {{ unsubmitted }} remaining
       </div>
     </div>
-  {% elif overall_status == 'Fail' %}
-    <div class="status-card bg-danger text-white shadow-sm">
-      <div class="d-flex align-items-center justify-content-between">
-        <div>
-          <h5 class="mb-1">Overall Status</h5>
-          <p class="mb-0 fw-bold fs-5">Fail</p>
-        </div>
-        <div class="status-icon bg-white text-danger">
-          <i class="bi bi-x-circle-fill"></i>
-        </div>
-      </div>
+    <div class="d-flex flex-wrap align-items-center gap-2">
+      <span class="chip"><i class="bi bi-check2-circle text-success"></i> {{ ns.passed }} Passed</span>
+      <span class="chip"><i class="bi bi-hourglass-split text-warning"></i> {{ in_progress }} In progress</span>
+      <span class="chip"><i class="bi bi-cloud-arrow-up text-secondary"></i> {{ unsubmitted }} Unsubmitted</span>
     </div>
-  {% else %}
-    <div class="status-card bg-warning text-dark shadow-sm">
-      <div class="d-flex align-items-center justify-content-between">
-        <div>
-          <h5 class="mb-1">Overall Status</h5>
-          <p class="mb-0 fw-bold fs-5">In Progress</p>
-        </div>
-        <div class="status-icon bg-dark text-warning">
-          <i class="bi bi-hourglass-split"></i>
-        </div>
-      </div>
+  </div>
+
+  {# ====== Integrated progress bar ====== #}
+  <div class="px-3 pb-3">
+    <div class="progress" role="progressbar" aria-valuemin="0" aria-valuemax="100"
+         aria-valuenow="{{ pct_pass }}">
+      {% set pass_pct = (ns.passed * 100 // (ns.total if ns.total else 1)) %}
+      {% set prog_pct = (in_progress * 100 // (ns.total if ns.total else 1)) %}
+      {% set unsub_pct = (unsubmitted * 100 // (ns.total if ns.total else 1)) %}
+      {% if pass_pct > 0 %}
+        <div class="progress-bar bg-success" style="width: {{ pass_pct }}%"></div>
+      {% endif %}
+      {% if prog_pct > 0 %}
+        <div class="progress-bar bg-warning text-dark" style="width: {{ prog_pct }}%"></div>
+      {% endif %}
+      {% if unsub_pct > 0 %}
+        <div class="progress-bar bg-secondary" style="width: {{ unsub_pct }}%"></div>
+      {% endif %}
     </div>
-  {% endif %}
+  </div>
 </div>
 
-{# --- Workbooks table --- #}
-<div class="card shadow-sm">
-  <div class="card-body">
+{# ================= Workbooks ================= #}
+<div class="panel">
+  <div class="panel-head d-flex align-items-center justify-content-between">
+    <h5 class="mb-0">Your Workbooks</h5>
+    <div class="small text-muted">Max {{ MAX_ATTEMPTS }} attempts per workbook</div>
+  </div>
+  <div class="p-3">
     <div class="table-responsive">
       <table class="table table-hover align-middle mb-0">
         <thead class="table-light">
@@ -106,101 +164,92 @@
         </thead>
         <tbody>
           {% for row in items %}
-          {% set latest = row.latest %}
-          {% set ns = namespace(label=row.label, badge=row.badge) %}
-          {# Override to show Failed if no attempts remain and not passed #}
-          {% if latest and latest.marked and row.attempts_left == 0 and (latest.is_referral or (latest.score is not none and latest.score == 0)) %}
-            {% set ns.label = 'Failed' %}
-            {% set ns.badge = 'bg-dark text-white' %}
-          {% endif %}
+            {% set latest = row.latest %}
+            {% set nsrow = namespace(label=row.label, badge=row.badge) %}
+            {# If out of attempts and not passed, call it Failed #}
+            {% if latest and latest.marked and row.attempts_left == 0 and (latest.is_referral or (latest.score is not none and latest.score == 0)) %}
+              {% set nsrow.label = 'Failed' %}
+              {% set nsrow.badge = 'bg-dark text-white' %}
+            {% endif %}
 
-          <tr>
-            <td class="fw-semibold">Workbook {{ row.wb_number }}</td>
+            <tr data-wb="{{ row.wb_number }}" data-status="{{ nsrow.label|lower }}">
+              <td class="fw-semibold">Workbook {{ row.wb_number }}</td>
 
-            <!-- Status badge -->
-            <td><span class="badge {{ ns.badge }}">{{ ns.label }}</span></td>
-
-            <!-- Attempts left -->
-            <td class="text-center">
-              {% if row.attempts_so_far == 0 %}
-                <span class="text-muted">—</span>
-              {% else %}
-                <span class="fw-semibold">{{ row.attempts_left }}</span>
-              {% endif %}
-            </td>
-
-            <!-- Last submitted -->
-            <td>
-              {% if latest %}
-                <span title="{{ latest.submission_time }}">
-                  {{ latest.submission_time.strftime('%Y-%m-%d %H:%M') }}
+              <td>
+                <span class="badge {{ nsrow.badge }}">
+                  {{ nsrow.label }}
                 </span>
-              {% else %}
-                <span class="text-muted">—</span>
-              {% endif %}
-            </td>
+              </td>
 
-            <!-- Feedback snippet -->
-            <td>
-              {% if latest and latest.feedback %}
-                <span class="small">{{ latest.feedback }}</span>
-              {% else %}
-                <span class="text-muted small">—</span>
-              {% endif %}
-            </td>
+              <td class="text-center">
+                {% if row.attempts_so_far == 0 %}
+                  <span class="text-muted">—</span>
+                {% else %}
+                  <span class="fw-semibold">{{ row.attempts_left }}</span>
+                {% endif %}
+              </td>
 
-            <!-- Actions -->
-            <td class="text-end">
-              <div class="d-flex flex-wrap justify-content-end align-items-center gap-2">
+              <td>
+                {% if latest %}
+                  <span title="{{ latest.submission_time }}">
+                    {{ latest.submission_time.strftime('%Y-%m-%d %H:%M') }}
+                  </span>
+                {% else %}
+                  <span class="text-muted">—</span>
+                {% endif %}
+              </td>
 
-                {% if row.can_upload %}
-                  <!-- First submission -->
-                  <form action="{{ url_for('student_dashboard') }}" method="post" enctype="multipart/form-data"
-                        class="action-form d-flex flex-wrap align-items-center gap-2">
-                    <input type="hidden" name="workbook_number" value="{{ row.wb_number }}">
-                    <div class="input-group input-group-sm upload-group">
-                      <input type="file" name="file" class="form-control" accept="application/pdf" required>
-                      <button type="submit" class="btn btn-primary">Upload</button>
-                    </div>
-                  </form>
+              <td>
+                {% if latest and latest.feedback %}
+                  <span class="small">{{ latest.feedback }}</span>
+                {% else %}
+                  <span class="text-muted small">—</span>
+                {% endif %}
+              </td>
 
-                {% elif row.can_reattempt %}
-                  <!-- Reattempt after referral -->
-                  <form action="{{ url_for('student_dashboard') }}" method="post" enctype="multipart/form-data"
-                        class="action-form d-flex flex-wrap align-items-center gap-2">
-                    <input type="hidden" name="workbook_number" value="{{ row.wb_number }}">
-                    <div class="input-group input-group-sm upload-group">
-                      <input type="file" name="referral_file" class="form-control" accept="application/pdf" required>
-                      <button type="submit" class="btn btn-danger">Re-upload</button>
-                    </div>
+              <td class="text-end">
+                <div class="d-flex flex-wrap justify-content-end align-items-center gap-2">
+                  {% if row.can_upload %}
+                    <!-- First submission -->
+                    <form action="{{ url_for('student_dashboard') }}" method="post" enctype="multipart/form-data"
+                          class="d-flex flex-wrap align-items-center gap-2">
+                      <input type="hidden" name="workbook_number" value="{{ row.wb_number }}">
+                      <div class="input-group input-group-sm upload-group">
+                        <input type="file" name="file" class="form-control" accept="application/pdf" required>
+                        <button type="submit" class="btn btn-primary">Upload</button>
+                      </div>
+                    </form>
+
+                  {% elif row.can_reattempt %}
+                    <!-- Reattempt after referral -->
+                    <form action="{{ url_for('student_dashboard') }}" method="post" enctype="multipart/form-data"
+                          class="d-flex flex-wrap align-items-center gap-2">
+                      <input type="hidden" name="workbook_number" value="{{ row.wb_number }}">
+                      <div class="input-group input-group-sm upload-group">
+                        <input type="file" name="referral_file" class="form-control" accept="application/pdf" required>
+                        <button type="submit" class="btn btn-danger">Re-upload</button>
+                      </div>
+                      {% if latest and latest.marked %}
+                        <a class="btn btn-outline-secondary btn-sm"
+                           href="{{ url_for('student_view_feedback', workbook_number=row.wb_number) }}">
+                          View feedback
+                        </a>
+                      {% endif %}
+                    </form>
+
+                  {% else %}
                     {% if latest and latest.marked %}
-                      <!-- INLINE: View feedback to the right of re-upload -->
                       <a class="btn btn-outline-secondary btn-sm"
                          href="{{ url_for('student_view_feedback', workbook_number=row.wb_number) }}">
                         View feedback
                       </a>
+                    {% else %}
+                      <span class="text-muted small">No action available</span>
                     {% endif %}
-                  </form>
-                  {% if latest and latest.corrected_submission_path %}
-                    <div class="small text-muted w-100 text-end">
-                      Reattempt uploaded: {{ latest.corrected_submission_path }}
-                    </div>
                   {% endif %}
-
-                {% else %}
-                  {% if latest and latest.marked %}
-                    <a class="btn btn-outline-secondary btn-sm"
-                       href="{{ url_for('student_view_feedback', workbook_number=row.wb_number) }}">
-                      View feedback
-                    </a>
-                  {% else %}
-                    <span class="text-muted small">No action available</span>
-                  {% endif %}
-                {% endif %}
-
-              </div>
-            </td>
-          </tr>
+                </div>
+              </td>
+            </tr>
           {% endfor %}
 
           {% if items|length == 0 %}
@@ -209,20 +258,20 @@
         </tbody>
       </table>
     </div>
+
+    <!-- Legend -->
+    <div class="mt-3 small d-flex flex-wrap align-items-center gap-2">
+      <span class="badge bg-success">Marked Pass</span>
+      <span class="badge bg-secondary">Awaiting submission</span>
+      <span class="badge bg-warning text-dark">Submitted</span>
+      <span class="badge bg-danger">Waiting for reattempt</span>
+      <span class="badge bg-dark text-white">Failed</span>
+    </div>
   </div>
 </div>
 
-<!-- Legend -->
-<div class="mt-3 small d-flex flex-wrap align-items-center gap-2">
-  <span class="badge bg-success">Marked Pass</span>
-  <span class="badge bg-secondary">Awaiting submission</span>
-  <span class="badge bg-warning text-dark">Submitted</span>
-  <span class="badge bg-danger">Waiting for reattempt</span>
-  <span class="badge bg-dark text-white">Failed</span>
-  <span class="ms-2 text-muted">Max 3 attempts per workbook.</span>
-</div>
-
 <script>
+/* -------- Deadline countdown -------- */
 (function(){
   const meta = document.getElementById('courseMeta');
   const targetEl = document.getElementById('deadlineCountdown');
@@ -237,9 +286,9 @@
 
   function paintClass(days){
     targetEl.classList.remove('countdown-ok','countdown-warn','countdown-bad');
-    if (days <= 14)      targetEl.classList.add('countdown-bad');   // red
-    else if (days <= 60) targetEl.classList.add('countdown-warn');  // amber
-    else                 targetEl.classList.add('countdown-ok');    // green
+    if (days <= 14)      targetEl.classList.add('countdown-bad');
+    else if (days <= 60) targetEl.classList.add('countdown-warn');
+    else                 targetEl.classList.add('countdown-ok');
   }
 
   function updateCountdown(){
@@ -264,5 +313,114 @@
   updateCountdown();
   setInterval(updateCountdown, 60 * 1000);
 })();
+
+/* ---------- Reliable confetti celebration (no deps, once per WB) ---------- */
+document.addEventListener('DOMContentLoaded', function () {
+  if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+
+  const userId = {{ current_user.id|int }};
+  const rows = Array.from(document.querySelectorAll('tbody tr[data-wb]'));
+  if (!rows.length) return;
+
+  const toCelebrate = [];
+  rows.forEach(tr => {
+    const wb = parseInt(tr.getAttribute('data-wb'), 10);
+    if (!wb) return;
+
+    const statusBadge = tr.querySelector('td:nth-child(2) .badge');
+    const isSuccess = statusBadge?.classList?.contains('bg-success');
+
+    const text = (tr.getAttribute('data-status') || statusBadge?.textContent || '').trim().toLowerCase();
+    const looksPass = /pass/.test(text) && !/fail/.test(text);
+
+    const passed = !!(isSuccess || looksPass);
+    if (!passed) return;
+
+    const key = `confetti:v1:user:${userId}:wb:${wb}`;
+    if (!localStorage.getItem(key)) {
+      toCelebrate.push(key);
+    }
+  });
+
+  if (!toCelebrate.length) return;
+  toCelebrate.forEach(key => localStorage.setItem(key, '1'));
+
+  const canvas = document.createElement('canvas');
+  canvas.style.position = 'fixed';
+  canvas.style.inset = '0';
+  canvas.style.zIndex = '2147483647';
+  canvas.style.pointerEvents = 'none';
+  document.body.appendChild(canvas);
+
+  const ctx = canvas.getContext('2d');
+  function resize() {
+    const dpr = Math.max(1, window.devicePixelRatio || 1);
+    canvas.width = Math.floor(window.innerWidth * dpr);
+    canvas.height = Math.floor(window.innerHeight * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+  resize();
+  window.addEventListener('resize', resize, { passive: true });
+
+  const colors = ['#4caf50','#81c784','#66bb6a','#43a047','#2e7d32','#a5d6a7','#c8e6c9'];
+  const area = Math.max(1, window.innerWidth * window.innerHeight);
+  const N = Math.min(320, Math.max(160, Math.floor(area / 16000)));
+  const particles = [];
+
+  function rand(min, max) { return min + Math.random() * (max - min); }
+
+  for (let i = 0; i < N; i++) {
+    particles.push({
+      x: rand(0, window.innerWidth),
+      y: rand(-40, -window.innerHeight * 0.3),
+      vx: rand(-1.2, 1.2),
+      vy: rand(1.8, 3.8),
+      size: rand(2, 5),
+      rot: rand(0, Math.PI * 2),
+      vr: rand(-0.25, 0.25),
+      shape: Math.random() < 0.6 ? 'rect' : 'circ',
+      color: colors[(Math.random() * colors.length) | 0],
+    });
+  }
+
+  const start = performance.now();
+  const duration = 2000;
+  const wind = rand(-0.04, 0.04);
+  const gravity = 0.02;
+
+  (function tick(now) {
+    const t = now - start;
+    ctx.clearRect(0, 0, window.innerWidth, window.innerHeight);
+
+    particles.forEach(p => {
+      p.vx += wind * 0.02;
+      p.vy += gravity;
+
+      p.x += p.vx;
+      p.y += p.vy;
+      p.rot += p.vr;
+
+      ctx.save();
+      ctx.translate(p.x, p.y);
+      ctx.rotate(p.rot);
+      ctx.fillStyle = p.color;
+      if (p.shape === 'rect') {
+        ctx.fillRect(-p.size, -p.size, p.size * 2, p.size * 2);
+      } else {
+        ctx.beginPath();
+        ctx.arc(0, 0, p.size, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.restore();
+    });
+
+    if (t < duration) {
+      requestAnimationFrame(tick);
+    } else {
+      window.removeEventListener('resize', resize);
+      canvas.remove();
+    }
+  })(start);
+});
 </script>
 {% endblock %}
