@@ -132,12 +132,12 @@
       <ul class="nav-list">
         {% if current_user.role == 'admin' %}
           <li class="nav-item">
-            <a class="nav-link {{ 'active' if request.endpoint == 'admin_dashboard' else '' }}" href="{{ url_for('admin_dashboard') }}">
+            <a class="nav-link {{ 'active' if request.endpoint in ['admin_dashboard'] else '' }}" href="{{ url_for('admin_dashboard') }}">
               <span class="dot"></span> Dashboard
             </a>
           </li>
           <li class="nav-item">
-            <a class="nav-link {{ 'active' if request.endpoint == 'admin_activity' else '' }}" href="{{ url_for('admin_activity') }}">
+            <a class="nav-link {{ 'active' if request.endpoint in ['admin_activity','admin_activity_student'] else '' }}" href="{{ url_for('admin_activity') }}">
               <span class="dot"></span> Activity Log
             </a>
           </li>
@@ -161,13 +161,13 @@
               <span class="dot"></span> Delete Markers
             </a>
           </li>
-          <!-- NEW: Settings -->
+          <!-- Settings -->
           <li class="nav-item">
             <a class="nav-link {{ 'active' if request.endpoint == 'admin_settings' else '' }}" href="{{ url_for('admin_settings') }}">
               <span class="dot"></span> Settings
             </a>
           </li>
-          <!-- NEW: Contextual Upload-on-behalf (visible when a student_id is in the current route) -->
+          <!-- Contextual: Upload on behalf (if viewing a student page with student_id in route) -->
           {% if request.view_args and request.view_args.get('student_id') %}
           <li class="nav-item">
             <a class="nav-link {{ 'active' if request.endpoint == 'proxy_upload' else '' }}"
@@ -198,6 +198,11 @@
           <li class="nav-item">
             <a class="nav-link {{ 'active' if request.endpoint == 'student_dashboard' else '' }}" href="{{ url_for('student_dashboard') }}">
               <span class="dot"></span> Dashboard
+            </a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link {{ 'active' if request.endpoint == 'student_faq' else '' }}" href="{{ url_for('student_faq') }}">
+              <span class="dot"></span> FAQs
             </a>
           </li>
           <li class="nav-item">
@@ -235,5 +240,14 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+  // Enable tooltips globally if present
+  document.addEventListener('DOMContentLoaded', function () {
+    const tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'))
+    tooltipTriggerList.forEach(function (tooltipTriggerEl) {
+      new bootstrap.Tooltip(tooltipTriggerEl)
+    })
+  });
+</script>
 </body>
 </html>

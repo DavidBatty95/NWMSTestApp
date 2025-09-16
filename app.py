@@ -789,6 +789,18 @@ def reset_password(token):
 # ===================================================
 # Routes: Student
 # ===================================================
+@app.route('/student_faq')
+@login_required
+def student_faq():
+    if current_user.role != 'student':
+        return redirect(url_for('login'))
+    # We pass constants used in the template for dynamic wording
+    return render_template(
+        'student_faq.html',
+        MAX_ATTEMPTS=MAX_ATTEMPTS,
+        MARKING_DEADLINE_DAYS=MARKING_DEADLINE_DAYS,
+        COURSE_DEADLINES=COURSE_DEADLINES,
+    )
 @app.route('/student_dashboard', methods=['GET', 'POST'])
 @login_required
 def student_dashboard():

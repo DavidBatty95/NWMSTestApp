@@ -1,0 +1,194 @@
+{% extends 'base.html' %}
+{% block title %}Student · FAQs{% endblock %}
+
+{% block content %}
+<div class="faq-head d-flex align-items-center justify-content-between mb-3">
+  <div>
+    <h2 class="mb-1">Frequently Asked Questions</h2>
+    <p class="text-muted mb-0">Short, clear answers to help you move forward quickly.</p>
+  </div>
+  <a class="btn btn-light btn-sm" href="{{ url_for('student_dashboard') }}">← Back to Dashboard</a>
+</div>
+
+<div class="card shadow-sm">
+  <div class="card-body">
+    <div class="accordion clean-accordion" id="faq">
+
+      <!-- Uploading -->
+      <div class="accordion-item">
+        <h2 class="accordion-header" id="h1">
+          <button class="accordion-button" type="button" data-bs-toggle="collapse" data-bs-target="#c1" aria-expanded="true" aria-controls="c1">
+            <span class="qdot">●</span> How do I upload my workbook?
+          </button>
+        </h2>
+        <div id="c1" class="accordion-collapse collapse show" aria-labelledby="h1" data-bs-parent="#faq">
+          <div class="accordion-body">
+            Go to <strong>Dashboard</strong> → open the correct workbook card → select <em>Upload PDF</em>.
+            Only PDF files are accepted (max 50&nbsp;MB). A green confirmation appears once uploaded.
+          </div>
+        </div>
+      </div>
+
+      <!-- Re-uploads / Referrals -->
+      <div class="accordion-item">
+        <h2 class="accordion-header" id="h2">
+          <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#c2" aria-expanded="false" aria-controls="c2">
+            <span class="qdot">●</span> I’ve been referred. How do re-uploads work?
+          </button>
+        </h2>
+        <div id="c2" class="accordion-collapse collapse" aria-labelledby="h2" data-bs-parent="#faq">
+          <div class="accordion-body">
+            When a workbook is <span class="badge bg-danger">Referral</span>, only the referred questions reopen.
+            Upload a corrected PDF from the same workbook card. Attempts are tracked automatically (up to the limit).
+            Questions already passed stay locked as <span class="badge bg-success">Pass</span>.
+          </div>
+        </div>
+      </div>
+
+      <!-- Deadlines -->
+      <div class="accordion-item">
+        <h2 class="accordion-header" id="h3">
+          <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#c3" aria-expanded="false" aria-controls="c3">
+            <span class="qdot">●</span> What are my deadlines?
+          </button>
+        </h2>
+        <div id="c3" class="accordion-collapse collapse" aria-labelledby="h3" data-bs-parent="#faq">
+          <div class="accordion-body">
+            Deadlines are based on your <strong>cohort start date</strong> and course rules.
+            Your dashboard shows each workbook’s current status and time guidance.
+            If something looks wrong, contact your marker or training admin.
+          </div>
+        </div>
+      </div>
+
+      <!-- File problems -->
+      <div class="accordion-item">
+        <h2 class="accordion-header" id="h4">
+          <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#c4" aria-expanded="false" aria-controls="c4">
+            <span class="qdot">●</span> My PDF won’t upload or preview—what should I do?
+          </button>
+        </h2>
+        <div id="c4" class="accordion-collapse collapse" aria-labelledby="h4" data-bs-parent="#faq">
+          <div class="accordion-body">
+            Make sure it’s a <strong>PDF</strong> under <strong>50&nbsp;MB</strong>.
+            If it’s from a scanner app, choose “Reduce file size” or “Flatten PDF”.
+            Still stuck? Email your marker or training admin with the file attached.
+          </div>
+        </div>
+      </div>
+
+      <!-- Marking -->
+      <div class="accordion-item">
+        <h2 class="accordion-header" id="h5">
+          <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#c5" aria-expanded="false" aria-controls="c5">
+            <span class="qdot">●</span> How long does marking take?
+          </button>
+        </h2>
+        <div id="c5" class="accordion-collapse collapse" aria-labelledby="h5" data-bs-parent="#faq">
+          <div class="accordion-body">
+            Marking usually completes within the published turnaround window.
+            You’ll see badges update on your dashboard. If it’s overdue, feel free to send a polite nudge.
+          </div>
+        </div>
+      </div>
+
+      <!-- Feedback -->
+      <div class="accordion-item">
+        <h2 class="accordion-header" id="h6">
+          <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#c6" aria-expanded="false" aria-controls="c6">
+            <span class="qdot">●</span> Where can I see detailed feedback?
+          </button>
+        </h2>
+        <div id="c6" class="accordion-collapse collapse" aria-labelledby="h6" data-bs-parent="#faq">
+          <div class="accordion-body">
+            Once marked, click <strong>View Feedback</strong> on the relevant workbook to see
+            question-by-question results and comments. On referral, only referred questions reopen.
+          </div>
+        </div>
+      </div>
+
+      <!-- Cohort/Marker -->
+      <div class="accordion-item">
+        <h2 class="accordion-header" id="h7">
+          <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#c7" aria-expanded="false" aria-controls="c7">
+            <span class="qdot">●</span> My cohort or assigned marker looks wrong—how can I fix it?
+          </button>
+        </h2>
+        <div id="c7" class="accordion-collapse collapse" aria-labelledby="h7" data-bs-parent="#faq">
+          <div class="accordion-body">
+            Head to <strong>Contact</strong> and email the training admin.
+            Include your name, course, and the correct cohort/marker details if you have them.
+          </div>
+        </div>
+      </div>
+
+      <!-- Security / Login -->
+      <div class="accordion-item">
+        <h2 class="accordion-header" id="h8">
+          <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#c8" aria-expanded="false" aria-controls="c8">
+            <span class="qdot">●</span> I can’t log in / forgot my password.
+          </button>
+        </h2>
+        <div id="c8" class="accordion-collapse collapse" aria-labelledby="h8" data-bs-parent="#faq">
+          <div class="accordion-body">
+            Use <strong>Forgot password</strong> on the login page to reset.
+            If the email doesn’t arrive, check spam and try your username instead of email.
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="mt-4 d-flex align-items-center justify-content-between flex-wrap gap-2">
+      <small class="text-muted">If your question isn’t covered here, we’re happy to help.</small>
+      <a href="{{ url_for('contact') }}" class="btn btn-outline-primary btn-sm">Contact Support</a>
+    </div>
+  </div>
+</div>
+
+<style>
+  /* Page head spacing */
+  .faq-head h2 { font-weight: 600; }
+
+  /* Accordion aesthetics */
+  .clean-accordion .accordion-item {
+    border: 1px solid #e9ecef;
+    border-radius: 12px;
+    overflow: hidden;
+    margin-bottom: .6rem;
+    background: #fff;
+  }
+  .clean-accordion .accordion-button {
+    padding: 0.95rem 1rem;
+    font-weight: 600;
+    background: #fff;
+    box-shadow: none !important;
+  }
+  .clean-accordion .accordion-button.collapsed { color: #1f2328; }
+  .clean-accordion .accordion-button:not(.collapsed) {
+    background: #f8f9fa;
+    color: #1f2328;
+  }
+  .clean-accordion .accordion-body {
+    padding: .9rem 1rem 1rem 1rem;
+    line-height: 1.55;
+    color: #333;
+  }
+  .qdot {
+    font-size: .9rem;
+    line-height: 1;
+    color: #4CAF50;   /* brand green, subtle anchor dot */
+    margin-right: .5rem;
+  }
+
+  /* Compact badge style inside answers */
+  .accordion-body .badge {
+    font-weight: 600;
+    letter-spacing: .2px;
+  }
+
+  /* Responsive: keep it airy but aligned */
+  @media (min-width: 992px) {
+    .faq-head { margin-bottom: 1.25rem; }
+  }
+</style>
+{% endblock %}
